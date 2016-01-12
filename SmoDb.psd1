@@ -50,7 +50,7 @@ Copyright = '(c) 2016 Cody Konior. All rights reserved.'
 # ProcessorArchitecture = ''
 
 # Modules that must be imported into the global environment prior to importing this module
-RequiredModules = @('Error', 'SQLPS')
+RequiredModules = @('Error', 'Performance', 'SQLPS')
 
 # Assemblies that must be loaded prior to importing this module
 # RequiredAssemblies = @()
