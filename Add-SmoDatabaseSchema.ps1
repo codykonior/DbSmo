@@ -1,14 +1,30 @@
-function ConvertFrom-DataSet {
+<#
+
+.SYNOPSIS
+
+.DESCRIPTION
+
+.PARAMETER
+
+.INPUTS
+
+.OUTPUTS
+
+.EXAMPLE
+
+#>
+
+function Add-SmoDatabaseSchema {
     [CmdletBinding()]
     param (
+        [Parameter(Mandatory = $true)]
+        [System.Data.DataSet] $DataSet,
         [Parameter(Mandatory = $true)]
         $ServerInstance,
         [Parameter(Mandatory = $true)]
         $DatabaseName,
         [Parameter(Mandatory = $true)]
         $SchemaName,
-        [Parameter(Mandatory = $true)]
-        [System.Data.DataSet] $DataSet,
         [switch] $Script
     )
 
@@ -23,21 +39,36 @@ function ConvertFrom-DataSet {
     foreach ($table in $DataSet.Tables) {
         try {
             $tableName = $table.TableName
-            Write-Verbose "Processing table $tableName"
+            Write-Verbose "Converting table $tableName"
             $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
             # Iterate columns where the column names aren't already in the table
             $changed = $false
             foreach ($column in ($table.Columns | Where { ($newTable.Columns | Select -ExpandProperty Name) -notcontains $_.ColumnName })) {
-                Write-Verbose "Adding column $($column.ColumnName)"
                 $dataType = ConvertFrom-DataType $column.DataType.Name
-                if ("VarBinary", "VarChar" -contains $dataType) {
+                Write-Verbose "Adding column $($column.ColumnName) as $dataType"
+
+                if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar") {
                     if ($column.MaxLength -ne -1) {
                         $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType, $column.MaxLength)
                     } else {
                         $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("$($dataType)Max")
                     }
+                } elseif ($dataType -eq "Decimal" -and ($column.ColumnName -like "*LSN" -or $column.ColumnName -like "*LogSequenceNumber")) {
+                    # These need to be of length 25, 0; the default is 19, 0.
+                    #   Database.MirroringFailoverLogSequenceNumber
+                    #   AvailabilityDatabase.RecoveryLSN 
+                    #   AvailabilityDatabase.TruncationLSN 
+                    #   DatabaseReplicaState.EndOfLogLSN 
+                    #   DatabaseReplicaState.LastCommitLSN 
+                    #   DatabaseReplicaState.LastHardenedLSN 
+                    #   DatabaseReplicaState.LastReceivedLSN 
+                    #   DatabaseReplicaState.LastRedoneLSN 
+                    #   DatabaseReplicaState.LastSentLSN 
+                    #   DatabaseReplicaState.RecoveryLSN 
+                    #   DatabaseReplicaState.TruncationLSN 
+                    $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType, 25, 0)
                 } else {
                     $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType)
                 }
@@ -69,10 +100,7 @@ function ConvertFrom-DataSet {
             # If the SMO table has a primary key but the new/existing table doesn't
             if ($table.PrimaryKey) {
                 if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
-                    try { $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
-                    } catch { 
-                    $_ 
-                    } 
+                    $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
                     Write-Verbose "Adding primary key $primaryKeyName"
 
                     $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
@@ -129,9 +157,5 @@ function ConvertFrom-DataSet {
 
     if ($Script) {
         $scriptText
-    } else {
-        $tables.GetEnumerator() | %{
-            $_.Value
-        }
     }
 }

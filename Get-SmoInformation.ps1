@@ -62,7 +62,7 @@ function Get-SmoInformation {
 
         $bulkCopyConnection = New-Object System.Data.SqlClient.SqlConnection("Server=$SaveServerInstance;Database=$SaveDatabase;Trusted_Connection=true")
         $bulkCopyConnection.Open()
-        $bulkCopyTransaction = $bulkCopyConnection.BeginTransaction("SmoDb_$ServerInstance")
+        $bulkCopyTransaction = $bulkCopyConnection.BeginTransaction($ServerInstance.Substring(0, [Math]::Min($ServerInstance.Length, 32)))
         $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($bulkCopyConnection, [System.Data.SqlClient.SqlBulkCopyOptions]::Default, $bulkCopyTransaction)
 
         try {
