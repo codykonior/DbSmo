@@ -1,3 +1,18 @@
+add a tracking number / start end time thing
+add more fine grained time tracking, like cumulative per path per server
+add more error tracking where the write-verbose are, along with descriptions of why; add breakpoints
+
+Better improvement list at the top, go through old files too
+Move the check data type into mainline and make smaller
+See if you can get it working on only one path, or pass in a sub path only
+reduce output, increase speed
+
+windiff
+github
+module
+
+Error adding datacolumn; because the property type being checked was wrong (scriptmethod / scriptproperty)
+
 9. It looks like lots of tables aren't being generated anymore, maybe broken by the non-array recurse being changed for the collection.
 
 0. Reduce logging, like on a property collection before the recurse?
@@ -68,7 +83,8 @@ ResourcePoolNumaNodes
 
 $instances = @(".")
 foreach ($serverInstance in $instances) {
-    Write-Host "Doing $serverInstance"
+    $started = Get-Date
+    Write-Host "Started $serverInstance at $started"
 
     try {
         $smo = New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance)
@@ -83,7 +99,17 @@ foreach ($serverInstance in $instances) {
 
         $schemaName = "smo"
         $tables = ConvertFrom-DataSet $opsServerInstance $opsDatabaseName $schemaName $dsSmo -Verbose
-        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "Alter Table smo.[Database] Alter Column MirroringFailoverLogSequenceNumber Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[Database]') Is Not Null Alter Table smo.[Database] Alter Column MirroringFailoverLogSequenceNumber Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[AvailabilityDatabase]') Is Not Null Alter Table smo.[AvailabilityDatabase] Alter Column RecoveryLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[AvailabilityDatabase]') Is Not Null Alter Table smo.[AvailabilityDatabase] Alter Column TruncationLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column EndOfLogLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column LastCommitLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column LastHardenedLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column LastReceivedLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column LastRedoneLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column LastSentLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column RecoveryLSN Decimal(25, 0) Null"
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "If Object_Id('smo.[DatabaseReplicaState]') Is Not Null Alter Table smo.[DatabaseReplicaState] Alter Column TruncationLSN Decimal(25, 0) Null"
         $sqlConnection = New-Object System.Data.SqlClient.SqlConnection("Server=$opsServerInstance;Database=$opsDatabaseName;Trusted_Connection=True")
         $sqlConnection.Open()
         $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($sqlConnection)
@@ -101,9 +127,13 @@ foreach ($serverInstance in $instances) {
     } catch {
         Write-Host "Exception on $serverInstance; $_"
     }
+
+    $ended = Get-Date
+    Write-Host "Finished $serverInstance at $ended"
+    $performance.Add($serverInstance, $ended - $started)
 }
 
-Write-Host "Finished at $(Get-Date)"
+$performance
 
 Setup script:
 -------------

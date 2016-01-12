@@ -217,15 +217,11 @@
             continue
         }
 
-
-        # This was 2 paragraphs up, but I want to test this
-        # SMO has a bug which throws an exception if you try to iterate through this property.
-        # We might be able to redirect to the Settings one here; $propertyValue = $InputObject.Settings.OleDbProviderSettings ?
+        # SMO has a bug which throws an exception if you try to iterate through this property. Instead we redirect it to use
+        # the one in Server/Settings which is more reliable. We already did the exclusion check so it's not impacted here.
         if ($propertyName -eq "OleDbProviderSettings" -and $propertyType -eq "Microsoft.SqlServer.Management.Smo.OleDbProviderSettingsCollection") {
-            Write-Verbose "$($tab)Skipping $property because it's a bug"
-            continue
+            $property = $InputObject.Settings.psobject.Properties["OleDbProviderSettings"]
         }
-
 
         $propertyValue = $property.Value  
 
@@ -268,13 +264,18 @@
                         continue
                     }
                 } else {
-                    if ($property.MemberType -eq "ScriptValue") {
-                        $column.DataType = Get-SmoDataSetType "System.String"
-                    } else {
-                        $column.DataType = Get-SmoDataSetType $propertyType
-                    } 
+                    try {
+                        if ($property.MemberType -eq "ScriptProperty") {
+                            $column.DataType = "System.String"
+                        } else {
+                            $column.DataType = Get-SmoDataSetType $propertyType
+                        } 
 
-                    $table.Columns.Add($column)
+                        $table.Columns.Add($column)
+                    } catch {
+                        Write-Verbose "Error $_"
+                        Write-Error $_
+                    }
                 }
             }
 
@@ -374,34 +375,39 @@
             ) {
             Write-Debug "$($tab)No recursion necessary; it's an empty collection or other simple type"
 
-            Write-Verbose "Here"
+            Write-Error "Here 1"
         } else {
             ## Really need to check why/if this is needed
             try { 
                 if ($propertyValue.psobject.Properties -and !(@($propertyValue.psobject.Properties).Count -gt 1)) {
-                    Write-Verbose "Here"
+                    Write-Error "Here 2"
                 }
             } catch { 
-                Write-Verbose "Here"
+                Write-Verbose "$($tab)Exception: $_"
+                throw
             }
-
 
             if (@($propertyValue.psobject.Properties).Count -gt 1) {
                 if ($propertyValue -is [System.Collections.ICollection]) {
                         Write-Verbose "$($tab)Recursing through collection"
                         try {
                             foreach ($item in $propertyValue.GetEnumerator()) {
-                                
                                 $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
                             }
                         } catch [Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException] {
                             # Happens when trying to access availability groups etc on a lower version
                         } catch [System.Data.SqlClient.SqlException] {
                             <# Number Class State = Message Number, Severity, State #>
-                            if ($_.Exception.InnerException.InnerException.Number -eq 954 -and $_.Exception.InnerException.InnerException.Class -eq 14 -and $_.Exception.InnerException.InnerException.State -eq 1) {
-                                Write-Verbose "$($tab)Couldn't get the data; $_"
-                            } else {
-                                throw
+                            try {
+                                if ($_.Exception.InnerException.InnerException.Number -eq 954 -and $_.Exception.InnerException.InnerException.Class -eq 14 -and $_.Exception.InnerException.InnerException.State -eq 1) {
+                                    Write-Verbose "$($tab)Couldn't get the data; $_"
+                                } else {
+                                    Write-Verbose "$($tab)Exception: $_"
+                                    throw
+                                }
+                            } catch {
+                                Write-Verbose "$($tab)Exception: $_"
+                                throw                                
                             }
                         } catch {
                             Write-Verbose "$($tab)Exception: $_"
@@ -423,8 +429,8 @@
                     Write-Verbose "$($tab)Recursing through non-array node"
                     $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
                 }
-            } else { 
-                Write-Verbose "Here"
+            } else {
+                Write-Error "Here 4"
             }
         }
     }

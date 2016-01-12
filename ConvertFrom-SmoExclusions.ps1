@@ -12,7 +12,6 @@ function ConvertFrom-SmoExclusions {
     #   Properties that are duplicated elsewhere in the tree that we know about
     @(
         "Server/ConnectionContext", # Not needed
-        "Server/OleDbProviderSettings", # Buggy
         "Server/Languages", # Not needed
         "Server/ServiceMasterKey", # Empty
         "Server/SystemDataTypes", # Not needed
@@ -68,8 +67,9 @@ function ConvertFrom-SmoExclusions {
         # Server/Information is deprecated and already in Server
         "Server/Information",
 
-        # Server/Settings is deprecated and already in Server, but we need to retain [O]leDbProviderSettings because the Server reference is broken
-        "Server/Settings/[A-N,P-Z]*",
+        # Server/Settings is deprecated and already in Server
+        # We automatically redirect Server/OleDbProviderSettings because of a bug, but this test is already done by then
+        "Server/Settings",
         
         "*/Events", # Event notification, not needed
         "*/IsDesignMode", # Not needed

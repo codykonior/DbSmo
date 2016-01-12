@@ -37,4 +37,4 @@ function Get-SmoDataSetType {
     } else {
         $null
     }
-}
+} 
