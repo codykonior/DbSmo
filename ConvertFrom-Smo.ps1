@@ -277,6 +277,8 @@
                 if ($propertyValue -isnot [System.DateTime] -or $propertyValue.Ticks -ne 0) { # Leave it null if this is the case, that's how SMO represents it
                     $row[$propertyName] = $propertyValue
                 }
+
+                continue
             }
         }
 
@@ -361,9 +363,7 @@
             Write-Debug "$($tab)No recursion necessary; it's an empty collection or other simple type"
         } else {
             ## Really need to check why/if this is needed
-            try { 
-                $a = $propertyValue.PSObject.Properties
-            } catch { 
+            if ($propertyValue.psobject.Properties -and !(@($propertyValue.psobject.Properties).Count -gt 1)) { 
                 Write-Verbose "Caught"
             }
             if (@($propertyValue.psobject.Properties).Count -gt 1) {

@@ -104,8 +104,6 @@ foreach ($serverInstance in $instances) {
 }
 
 Write-Host "Finished at $(Get-Date)"
-# Alter Table smo.[Database] Alter Column MirroringFailoverLogSequenceNumber Decimal(25, 0) Null
-
 
 Setup script:
 -------------
