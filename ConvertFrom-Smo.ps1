@@ -1,10 +1,26 @@
-﻿function ConvertFrom-Smo {
+<#
+
+.SYNOPSIS
+
+.DESCRIPTION
+
+.PARAMETER
+
+.INPUTS
+
+.OUTPUTS
+
+.EXAMPLE
+
+#>
+
+function ConvertFrom-Smo {
     [Cmdletbinding()]
     param (
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
         $InputObject,
         [System.Data.DataSet] $OutputObject,
-        [int] $Depth = -1,
+        [int] $Depth = 0,
         # If there's no Urn property on the object we received, these "prior" properties are used to construct a path for 
         # a) checking against exclusions and indirectly 
         # b) the table name
@@ -43,8 +59,31 @@
         Write-Verbose "$($tab)Working on $urn, the skeleton path is $path"
     }
 
-    # These are table renames
+    # These are table renames for conflicts and readability. I don't think it will work if you renamed 
+    # one that has a foreign key dependency on it though. If you really wanted to do this you'd need
+    # to work out how to make sub tables pick up this name; it gets extracted from the Urn which is why
+    # it wouldn't work. Unless we switched that to use the path instead, and overwrote the path; here
+    # and on the sub tables. I don't do that because splitting on the path breaks easily because it's
+    # based on / which can show in lots of properties. The XPath doesn't have this issue. But we could
+    # convert the $path variable to an array instead and then join it for comparisons.
+    #
+    # On second thoughts, the past primary key is fine. The new foreign key is fine. The foreign key
+    # name is fine (it gets the name from the foreign key table). All that would be wrong is the name
+    # of the new key for the foreign key because it's based on the XPath not on the past table name.
+    # That could be fixed easily...
+    #
+    # These only rename TABLES, not PROPERTIES.
     switch ($path) {
+        # Rename for readability
+        "Server/Mail/ConfigurationValue" {
+            $tableName = "MailConfigurationValue"
+        }
+
+        # Rename for readability
+        "Server/UserOption" {
+            $tableName = "ServerUserOption"
+        }
+
         # Schedule = Server/JobServer/Job/SharedSchedule
         "Server/JobServer/Job/Schedule" {
             $tableName = "JobSchedule"
@@ -127,7 +166,7 @@
     $row = $table.NewRow()
 
     # We need to populate primary keys (and add the columns if necessary)
-    Write-Verbose "$($tab)Calculating primary keys"
+    Write-Verbose "$($tab)Preparing primary keys"
     $primaryKeyColumns = @()
     $foreignKeyColumns = @()
 
@@ -136,8 +175,7 @@
         $key = $urn.XPathExpression.Item($i)
 
         # Iterate through each part of the URN; e.g. the Server part, the Database part, the User part.
-        foreach ($keyProperty in $key.FixedProperties.GetEnumerator()) {
-            
+        foreach ($keyProperty in $key.FixedProperties.GetEnumerator()) {            
             if ($i -eq ($urn.XPathExpression.Length - 1) -and $InputObject.psobject.Properties["Urn"]) {
                 # If we are on the last part of the Urn, and the current row has a Urn, we use the proper name
                 # (because this last name is the one that will be used on the current row as a property already)
@@ -148,7 +186,13 @@
                 # Also, if we were on the last step, but there is no Urn, then it means we still need to do this;
                 # as the current row will be using a different current property name already, it's just not part
                 # of the key yet (as far as we know, it will be "fixed" by adding it manually a bit later).
-                $keyPropertyName = "$($key.Name)$($keyProperty.Name)"
+
+                $parentColumn = $ParentPrimaryKeyColumns[$primaryKeyColumns.Count]
+                if (($ParentPrimaryKeyColumns[0].Table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint] } | Select -ExpandProperty Columns) -contains $parentColumn) {
+                    $keyPropertyName = $parentColumn.ColumnName
+                } else {
+                    $keyPropertyName = "$($ParentPrimaryKeyColumns[0].Table.TableName)$($parentColumn.ColumnName)"
+                }
             }
             # Examples:
             #   /Server Key = Name                
@@ -162,8 +206,10 @@
             if (!$table.Columns[$keyPropertyName]) {
                 $column = New-Object System.Data.DataColumn
                 $column.ColumnName = $keyPropertyName
+                # It recognises all of these automatically Number but I populate them for prosperity anyway
                 $column.DataType = switch ($keyProperty.Value.ObjType) { "String" { "System.String" } "Boolean" { "System.Boolean" } "Number" { "System.Int32" } } 
-                if ($column.DataType -eq [string]) { # Not a bug, it really is equal, not is
+                # Not a bug, use -eq instead of -is
+                if ($column.DataType -eq [string]) { 
                     $column.MaxLength = 128
                 }
                 $table.Columns.Add($column)
@@ -192,7 +238,7 @@
     $properties = $InputObject.psobject.Properties | %{
         $propertyPath = "$path/$($_.Name)"
 
-        if (!(ConvertFrom-SmoExclusions | Where { $propertyPath -like $_ })) {
+        if (!(Get-SmoPropertyExclusion | Where { $propertyPath -like $_ })) {
             $_
         }
     }
@@ -207,13 +253,13 @@
         # SMO throws an exception when it automatically creates some objects in collections, like Certificates, 
         # and you try to iterate through them without populating them first.
         if ($properties.psobject.Properties["State"] -and $properties.psobject.Properties["State"].Value -eq "Creating") {
-            Write-Verbose "$($tab)Skipping $propertyName because it is not a real record"
+            Write-Debug "$($tab)Skipping $propertyName because it is not a real record"
             continue
         }
 
         # These are handled as properties on the main object, the real property collection doesn't need to be touched
         if ($propertyType -like "Microsoft.SqlServer.Management.Smo.*PropertyCollection") {
-            Write-Verbose "$($tab)Completely skipping $propertyName as it is a property collection"
+            Write-Debug "$($tab)Completely skipping $propertyName as it is a property collection"
             continue
         }
 
@@ -229,10 +275,10 @@
         # when you add them to the table while constraints exist.
         if ($propertyType -eq "Microsoft.SqlServer.Management.Smo.ConfigProperty") { # It's important to use this instead of a check; because UserInstanceTimeout can be a Null value type
             if ($propertyValue -eq $null -or $propertyValue.Number -eq 0) {
-                Write-Verbose "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
+                Write-Debug "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
                 continue
             } else {
-                Write-Verbose "$($tab)Processing config property $propertyName"
+                Write-Debug "$($tab)Processing config property $propertyName"
 
                 $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
                 $writeRow = $false
@@ -242,20 +288,22 @@
             Write-Debug "$($tab)Processing property $propertyName collection"
             # We want to drop below to recurse properties
 
+            # It's possible for it to be null, which is okay, and worth trying to iterate
             if ($propertyValue.Count -eq 0) {
-                continue # It's possible for it to be null, in which case, ew attempt to iterate later
+                continue
             }
+          
+            $recurseProperties += $property
+            continue
         } else {
             # We can handle [System.Byte[]] as Varbinary, and we manually skip the collection portion/other properties later
-            Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
-
             if (!$table.Columns[$propertyName]) {
                 $column = New-Object System.Data.DataColumn
                 $column.ColumnName = $propertyName
 
                 # The ScriptProperty is just a workaround for IPAddressToString
                 if (!(Get-SmoDataSetType $propertyType) -and $property.MemberType -ne "ScriptProperty") {
-                    Write-Verbose "$($tab)Skipped writing out the raw column because it doesn't look right; it may be recursed instead"
+                    Write-Debug "$($tab)Skipped writing out the raw column because it doesn't look right; it may be recursed instead"
 
                     if ($propertyValue -eq $null) {
                         continue
@@ -273,8 +321,7 @@
 
                         $table.Columns.Add($column)
                     } catch {
-                        Write-Verbose "Error $_"
-                        Write-Error $_
+                        Write-Error "$($tab) Exception: $_"
                     }
                 }
             }
@@ -286,16 +333,16 @@
                 Write-Debug "$($tab)Skipping Null value"
                 continue
             } else {
-                if ($propertyValue -isnot [System.DateTime] -or $propertyValue.Ticks -ne 0) { # Leave it null if this is the case, that's how SMO represents it
+                Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
+    
+	        	# This is how SMO represents null dates; a 0000 date or a 1900 date. Both are converted to null.
+                if ($propertyValue -isnot [System.DateTime] -or @(599266080000000000, 0) -notcontains $propertyValue.Ticks) {
                     $row[$propertyName] = $propertyValue
                 }
 
-                ## Testing not recursing these again 
                 continue
             }
         }
-
-        $recurseProperties += $property
     }
     # Finished first round of adding properties and values
 
@@ -363,75 +410,43 @@
     foreach ($property in $recurseProperties) {
         $propertyName = $property.Name
         $propertyValue = $property.Value  
+        Write-Verbose "$($tab)Recursing through $propertyName collection"
 
-        if ($propertyValue -is [System.Byte[]] -or
-            $propertyValue -is [System.DateTime] -or 
-            $propertyValue -is [System.Enum] -or 
-            $propertyValue -is [System.Guid] -or 
-            $propertyValue -is [System.String] -or 
-            $propertyValue -is [System.TimeSpan] -or 
-            $propertyValue -is [System.Version] -or 
-            ($propertyValue -is [System.Collections.ICollection] -and $propertyValue.Count -eq 0)
-            ) {
-            Write-Debug "$($tab)No recursion necessary; it's an empty collection or other simple type"
-
-            Write-Error "Here 1"
-        } else {
-            ## Really need to check why/if this is needed
-            try { 
-                if ($propertyValue.psobject.Properties -and !(@($propertyValue.psobject.Properties).Count -gt 1)) {
-                    Write-Error "Here 2"
+        if ($propertyValue -is [System.Collections.ICollection]) {
+            try {
+                foreach ($item in $propertyValue.GetEnumerator()) {
+                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
                 }
-            } catch { 
-                Write-Verbose "$($tab)Exception: $_"
-                throw
-            }
-
-            if (@($propertyValue.psobject.Properties).Count -gt 1) {
-                if ($propertyValue -is [System.Collections.ICollection]) {
-                        Write-Verbose "$($tab)Recursing through collection"
-                        try {
-                            foreach ($item in $propertyValue.GetEnumerator()) {
-                                $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
-                            }
-                        } catch [Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException] {
-                            # Happens when trying to access availability groups etc on a lower version
-                        } catch [System.Data.SqlClient.SqlException] {
-                            <# Number Class State = Message Number, Severity, State #>
-                            try {
-                                if ($_.Exception.InnerException.InnerException.Number -eq 954 -and $_.Exception.InnerException.InnerException.Class -eq 14 -and $_.Exception.InnerException.InnerException.State -eq 1) {
-                                    Write-Verbose "$($tab)Couldn't get the data; $_"
-                                } else {
-                                    Write-Verbose "$($tab)Exception: $_"
-                                    throw
-                                }
-                            } catch {
-                                Write-Verbose "$($tab)Exception: $_"
-                                throw                                
-                            }
-                        } catch {
-                            Write-Verbose "$($tab)Exception: $_"
-                            throw
-                        }
-                } elseif ($tableName -eq "Configuration") {
-                    # We have a special case for this. Because we're flattening it into one table, we need to pass
-                    # the parent primary key columns, instead of our own.
-                    foreach ($item in @($propertyValue)) {
-                        Write-Verbose "$($tab)Recursing through array node"
-                        $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
-                    }    
-                } elseif ($propertyValue -is [System.Array]) {
-                    foreach ($item in @($propertyValue)) {
-                        Write-Verbose "$($tab)Recursing through array node"
-                        $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
-                    }    
+            } catch {
+                if (Test-Error Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException) {
+                    # e.g. Availability Groups on lower versions of SQL Server
+                    Write-Verbose "$($tab)Collection not valid on this version."
+                } elseif (Test-Error System.UnauthorizedAccessException) {
+                    Write-Error "$($tab)Administrator (or other) permission required to use WMI."
+                } elseif (Test-Error (New-Object PSObject -Property @{ ErrorCode = "InvalidNamespace" })) {
+                    Write-Error "SMO 2014 bug connecting to WMI on SQL Server 2012."
+                } elseif (Test-Error (New-Object PSObject -Property @{ Number = 954; Class = 14; State = 1 })) {
+                    Write-Verbose "$($tab)Unable to enumerate the collection, due to mirroring/AGs."
                 } else {
-                    Write-Verbose "$($tab)Recursing through non-array node"
-                    $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                    Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
                 }
-            } else {
-                Write-Error "Here 4"
             }
+        } elseif ($tableName -eq "Configuration") {
+            # We have a special case for this. Because we're flattening it into one table, we need to pass
+            # the parent primary key columns, instead of our own.
+            Write-Error "This isn't supposed to be used anymore"
+            foreach ($item in @($propertyValue)) {
+                Write-Verbose "$($tab)Recursing through Configuration node"
+                $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
+            }    
+        } elseif ($propertyValue -is [System.Array]) {
+            foreach ($item in @($propertyValue)) {
+                Write-Verbose "$($tab)Recursing through array node"
+                $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
+            }    
+        } else {
+            Write-Verbose "$($tab)Recursing through non-array node"
+            $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
         }
     }
     # Finished looping properties

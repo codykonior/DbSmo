@@ -1,0 +1,35 @@
+<#
+
+.SYNOPSIS
+
+.DESCRIPTION
+
+.PARAMETER
+
+.INPUTS
+
+.OUTPUTS
+
+.EXAMPLE
+
+#>
+
+function  {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
+
+    )
+
+    Begin {
+
+    }
+
+    Process {
+
+    }
+
+    End {
+
+    }
+}

@@ -1,3 +1,19 @@
+<#
+
+.SYNOPSIS
+
+.DESCRIPTION
+
+.PARAMETER
+
+.INPUTS
+
+.OUTPUTS
+
+.EXAMPLE
+
+#>
+
 function Get-SmoDataSetType {
     [CmdletBinding()]    
     param (
@@ -35,6 +51,6 @@ function Get-SmoDataSetType {
     } elseif ($stringList -contains $TypeName -or (& ([ScriptBlock]::Create("[$TypeName].BaseType -eq [System.Enum]")))) { # There's also a type .IsEnum; used on lots of Server.* stuff, only on the GetType()
         "System.String"
     } else {
-        $null
+        return
     }
 } 

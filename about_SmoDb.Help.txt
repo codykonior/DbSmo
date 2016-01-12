@@ -1,3 +1,131 @@
+To Do
+-----
+remove word exception from: VERBOSE: Collection not valid on this version; Exception calling "GetEnumerator" with "0" argument(s): "Operation not supported on version 10.50.6000."
+
+add a tracking number / start end time thing
+add more fine grained time tracking, like cumulative per path per server
+add more error tracking where the write-verbose are, along with descriptions of why; add breakpoints
+
+go through old files looking for improvements
+Move the check data type into mainline and make smaller
+See if you can get it working on only one path, or pass in a sub path only
+reduce output, increase speed
+
+Need to split between 2012/2014 WMI
+Modules
+Subfunctions
+Confirm whether decimals are written properly
+
+Server/DefaultData can be wrong, but rewritten if you want
+    EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'DefaultData', REG_SZ, N'D:\MSSQL\Data\MSSQL10.MSSQLSERVER\MSSQL\DATA'
+    vs
+    SET @registry_key = N'Software\Microsoft\MSSQLServer\Setup';
+    EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', @registry_key, N'SQLDataRoot', @path output;
+    SET @path = @path + '\Data';
+    So basically Coalesce(DefaultFile, Server.InstallDataDirectory + '\Data')
+
+Bug Fixes
+---------
+
+01. Bunch of tables with SyncRoot columns instead of being iterated properly. This happens when the
+ICollection.GetEnumerator() isn't called and instead it has dropped through to be recursed as a
+non-array.
+
+Check:
+    Select 'Select ''' + Schema_Name(t.schema_id) + '.' + t.name + ''' As TableName, * From ' + schema_name(t.schema_id) + '.' + t.name
+    From sys.tables t
+    Join sys.columns c
+    On t.object_id = c.object_id
+    Where c.name = 'syncroot'
+    Order By t.name
+
+02. A "Default" table for database defaults was being populated even though it was excluded. This
+happened when I'd put "Server/Default" into the exclusion list while the actual property name is
+"Server/Defaults".
+
+03. Exceptions when adding a DataColumn. This was a bug after calling Get-SmoDataSetType with a
+System.Object; it couldn't convert it. I had special logic to handle this but had misspelt the
+special comparison for MemberType from ScriptProperty to ScriptMethod.
+
+04. A bunch of tables weren't being generated anymore. This was when ICollection wasn't being
+recursed and instead dropping through to the non-array recurse.
+
+05. Exception when enumerating availabilty groups; "Operation not supported on version". This
+is avoided with an exception check by type.
+
+06. Exception when enumerating databases on a mirrored instance and where the database is not
+available. This is avoided with an exception check by number (the type is generic).
+
+07. Dates not being returned as null. These really weren't null, I've added in code to convert
+the magic numbers to null.
+
+08. When creating tables they weren't having primary keys added. I'd caught an exception but
+then printed it verbosely and continued on; never noticing it was failing. I had rewritten
+some code that was checking for a property between two objects and where the property names
+were slightly different and failing on one.
+
+09. IPAddressToString wasn't being populated. This is a weird ScriptProperty on objects that
+has a TypeName of System.Object.
+
+10. Foreign key names were incorrect. Because I was experimenting with changing it to get the
+column names from the parent primary key; but it was not checking properly whether to put a
+prefix on it or not. I ended up doing this by also comparing the parent primary key to the
+parent foreign key (if it's part of the foreign key, don't add a prefix; otherwise it's for
+our direct parent so we should add a prefix to the parent's column name in our table so as
+not to create clashes).
+
+Check:
+    select s.name, f.name, o1.name, c1.name, o2.name, c2.name
+    from ops2.sys.foreign_keys f
+    join ops2.sys.objects o1
+    on f.parent_object_id = o1.object_id
+    join ops2.sys.schemas s
+    on o1.schema_id = s.schema_id
+    join ops2.sys.objects o2
+    on f.referenced_object_id = o2.object_id
+    join ops2.sys.foreign_key_columns fc
+    on f.object_id = fc.constraint_object_id
+    join ops2.sys.columns c1
+    on fc.parent_object_id = c1.object_id
+    and fc.parent_column_id = c1.column_id
+    join ops2.sys.columns c2
+    on fc.referenced_object_id = c2.object_id
+    and fc.referenced_column_id = c2.column_id
+    except
+    select s.name, f.name, o1.name, c1.name, o2.name, c2.name
+    from ops.sys.foreign_keys f
+    join ops.sys.objects o1
+    on f.parent_object_id = o1.object_id
+    join ops.sys.schemas s
+    on o1.schema_id = s.schema_id
+    join ops.sys.objects o2
+    on f.referenced_object_id = o2.object_id
+    join ops.sys.foreign_key_columns fc
+    on f.object_id = fc.constraint_object_id
+    join ops.sys.columns c1
+    on fc.parent_object_id = c1.object_id
+    and fc.parent_column_id = c1.column_id
+    join ops.sys.columns c2
+    on fc.referenced_object_id = c2.object_id
+    and fc.referenced_column_id = c2.column_id
+    order by 1, 2, 3, 4, 5, 6
+
+11. Error doing bulk copy from string to boolean. This was because the column orders are different
+    and so you have to use a bulk copy mapping listing column name to column name.
+
+12. Error doing bulk copy because of the decimal type. There are decimal LSN fields and they need
+    to keep their precision of 25. I also switched a -like for -eq by accident causing them to still
+    come out with the wrong precision.
+
+13. Lots of issues getting the exceptions working. It seemed that often if you had multiple catch
+    blocks catching .NET types, it would get confused and start sending exceptions to the wrong
+    ones (and yes I'm absolutely sure of it; it wasn't in any of the inner or base exceptions).
+    So I had to replace it with what I have now and it's very buggy here but the worst case is if
+    the exception throws its own exception and doesn't describe accurately what went on; it will
+    still stop processing properly.
+
+--
+
 add a tracking number / start end time thing
 add more fine grained time tracking, like cumulative per path per server
 add more error tracking where the write-verbose are, along with descriptions of why; add breakpoints

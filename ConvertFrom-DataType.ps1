@@ -1,3 +1,19 @@
+<#
+
+.SYNOPSIS
+
+.DESCRIPTION
+
+.PARAMETER
+
+.INPUTS
+
+.OUTPUTS
+
+.EXAMPLE
+
+#>
+
 function ConvertFrom-DataType {
     [CmdletBinding()]
     param (
