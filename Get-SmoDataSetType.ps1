@@ -24,6 +24,7 @@ function Get-SmoDataSetType {
     
     $stringList = @(
         "System.Enum",
+        "ScriptProperty", # Used on IPAddressToString
         "System.String",
         "System.Timespan",
         "System.Version"
@@ -31,7 +32,7 @@ function Get-SmoDataSetType {
 
     if ($typeList -contains $TypeName) {
         $TypeName
-    } elseif ($stringList -contains $TypeName -or (& ([ScriptBlock]::Create("[$TypeName].BaseType -eq [System.Enum]")))) {
+    } elseif ($stringList -contains $TypeName -or (& ([ScriptBlock]::Create("[$TypeName].BaseType -eq [System.Enum]")))) { # There's also a type .IsEnum; used on lots of Server.* stuff, only on the GetType()
         "System.String"
     } else {
         $null

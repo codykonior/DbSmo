@@ -61,6 +61,15 @@ function ConvertFrom-SmoExclusions {
         "Server/Database/UserName", # Not needed
         "Server/Database/Views", # Not needed
         "Server/Database/XmlSchemaCollections", # Not needed
+
+        # Server/Database/DatabaseOptions is deprecated and already in Server/Database
+        "Server/Database/DatabaseOptions",
+                
+        # Server/Information is deprecated and already in Server
+        "Server/Information",
+
+        # Server/Settings is deprecated and already in Server, but we need to retain [O]leDbProviderSettings because the Server reference is broken
+        "Server/Settings/[A-N,P-Z]*",
         
         "*/Events", # Event notification, not needed
         "*/IsDesignMode", # Not needed
@@ -68,53 +77,6 @@ function ConvertFrom-SmoExclusions {
         "*/State", # Not needed
         "*/Urn", # Flattened elsewhere
         "*/UserData", # Empty
-
-        # These are duplicated in the System/Information schema; $smo.Information.psobject.Properties | Select -ExpandProperty Name | Sort | %{ "`"Server/$_`"," } 
-        "Server/BuildClrVersion",
-        "Server/BuildClrVersionString",
-        "Server/BuildNumber",
-        "Server/Collation",
-        "Server/CollationId",
-        "Server/ComparisonStyle",
-        "Server/ComputerNamePhysicalNetBIOS",
-        "Server/Edition",
-        "Server/EngineEdition",
-        "Server/ErrorLogPath",
-        "Server/FullyQualifiedNetName",
-        "Server/IsCaseSensitive",
-        "Server/IsClustered",
-        "Server/IsFullTextInstalled",
-        "Server/IsHadrEnabled",
-        "Server/IsSingleUser",
-        "Server/IsXTPSupported",
-        "Server/Language",
-        "Server/MasterDBLogPath",
-        "Server/MasterDBPath",
-        "Server/MaxPrecision",
-        "Server/NetName",
-        "Server/OSVersion",
-        "Server/Parent",
-        "Server/PhysicalMemory",
-        "Server/Platform",
-        "Server/Processors",
-        "Server/Product",
-        "Server/ProductLevel",
-        "Server/Properties",
-        "Server/ResourceLastUpdateDateTime",
-        "Server/ResourceVersion",
-        "Server/ResourceVersionString",
-        "Server/RootDirectory",
-        "Server/SqlCharSet",
-        "Server/SqlCharSetName",
-        "Server/SqlSortOrder",
-        "Server/SqlSortOrderName",
-        "Server/State",
-        "Server/Urn",
-        "Server/UserData",
-        "Server/Version",
-        "Server/VersionMajor",
-        "Server/VersionMinor",
-        "Server/VersionString",
 
         # Wmi
         "ManagedComputer/ConnectionSettings"

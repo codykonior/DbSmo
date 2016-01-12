@@ -204,12 +204,6 @@
         $propertyName = $property.Name
         $propertyType = $property.TypeNameOfValue
 
-        # SMO has a bug which throws an exception if you try to iterate through this property.
-        if ($propertyName -eq "OleDbProviderSettings" -and $propertyType -eq "Microsoft.SqlServer.Management.Smo.OleDbProviderSettingsCollection") {
-            Write-Verbose "$($tab) Skipping $property because it's a bug"
-            continue
-        }
-
         # SMO throws an exception when it automatically creates some objects in collections, like Certificates, 
         # and you try to iterate through them without populating them first.
         if ($properties.psobject.Properties["State"] -and $properties.psobject.Properties["State"].Value -eq "Creating") {
@@ -223,11 +217,17 @@
             continue
         }
 
-        $propertyValue = $property.Value  
 
-        if ($urn.tostring() -eq "Server[@Name='.']/Database[@Name='DB']/User[@Name='INFORMATION_SCHEMA']" -and $propertyName -eq "sid") {
-            Write-verbose "Here"
+        # This was 2 paragraphs up, but I want to test this
+        # SMO has a bug which throws an exception if you try to iterate through this property.
+        # We might be able to redirect to the Settings one here; $propertyValue = $InputObject.Settings.OleDbProviderSettings ?
+        if ($propertyName -eq "OleDbProviderSettings" -and $propertyType -eq "Microsoft.SqlServer.Management.Smo.OleDbProviderSettingsCollection") {
+            Write-Verbose "$($tab)Skipping $property because it's a bug"
+            continue
         }
+
+
+        $propertyValue = $property.Value  
 
         # This addresses specific Server/Configuration entries which have not been filled out, causing an exception
         # when you add them to the table while constraints exist.
@@ -245,6 +245,10 @@
         } elseif ($propertyValue -is [System.Collections.ICollection] -and $propertyValue -isnot [System.Byte[]]) {
             Write-Debug "$($tab)Processing property $propertyName collection"
             # We want to drop below to recurse properties
+
+            if ($propertyValue.Count -eq 0) {
+                continue # It's possible for it to be null, in which case, ew attempt to iterate later
+            }
         } else {
             # We can handle [System.Byte[]] as Varbinary, and we manually skip the collection portion/other properties later
             Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
@@ -252,7 +256,9 @@
             if (!$table.Columns[$propertyName]) {
                 $column = New-Object System.Data.DataColumn
                 $column.ColumnName = $propertyName
-                if (!(Get-SmoDataSetType $propertyType)) {
+
+                # The ScriptProperty is just a workaround for IPAddressToString
+                if (!(Get-SmoDataSetType $propertyType) -and $property.MemberType -ne "ScriptProperty") {
                     Write-Verbose "$($tab)Skipped writing out the raw column because it doesn't look right; it may be recursed instead"
 
                     if ($propertyValue -eq $null) {
@@ -262,7 +268,12 @@
                         continue
                     }
                 } else {
-                    $column.DataType = Get-SmoDataSetType $propertyType
+                    if ($property.MemberType -eq "ScriptValue") {
+                        $column.DataType = Get-SmoDataSetType "System.String"
+                    } else {
+                        $column.DataType = Get-SmoDataSetType $propertyType
+                    } 
+
                     $table.Columns.Add($column)
                 }
             }
@@ -278,6 +289,7 @@
                     $row[$propertyName] = $propertyValue
                 }
 
+                ## Testing not recursing these again 
                 continue
             }
         }
@@ -351,7 +363,7 @@
         $propertyName = $property.Name
         $propertyValue = $property.Value  
 
-        if ($propertyValue -is [System.Byte[]] -or 
+        if ($propertyValue -is [System.Byte[]] -or
             $propertyValue -is [System.DateTime] -or 
             $propertyValue -is [System.Enum] -or 
             $propertyValue -is [System.Guid] -or 
@@ -361,11 +373,19 @@
             ($propertyValue -is [System.Collections.ICollection] -and $propertyValue.Count -eq 0)
             ) {
             Write-Debug "$($tab)No recursion necessary; it's an empty collection or other simple type"
+
+            Write-Verbose "Here"
         } else {
             ## Really need to check why/if this is needed
-            if ($propertyValue.psobject.Properties -and !(@($propertyValue.psobject.Properties).Count -gt 1)) { 
-                Write-Verbose "Caught"
+            try { 
+                if ($propertyValue.psobject.Properties -and !(@($propertyValue.psobject.Properties).Count -gt 1)) {
+                    Write-Verbose "Here"
+                }
+            } catch { 
+                Write-Verbose "Here"
             }
+
+
             if (@($propertyValue.psobject.Properties).Count -gt 1) {
                 if ($propertyValue -is [System.Collections.ICollection]) {
                         Write-Verbose "$($tab)Recursing through collection"
@@ -379,12 +399,13 @@
                         } catch [System.Data.SqlClient.SqlException] {
                             <# Number Class State = Message Number, Severity, State #>
                             if ($_.Exception.InnerException.InnerException.Number -eq 954 -and $_.Exception.InnerException.InnerException.Class -eq 14 -and $_.Exception.InnerException.InnerException.State -eq 1) {
-                                Write-Verbose "Ok"
+                                Write-Verbose "$($tab)Couldn't get the data; $_"
                             } else {
                                 throw
                             }
                         } catch {
-                            Write-Verbose "Here"
+                            Write-Verbose "$($tab)Exception: $_"
+                            throw
                         }
                 } elseif ($tableName -eq "Configuration") {
                     # We have a special case for this. Because we're flattening it into one table, we need to pass
@@ -402,6 +423,8 @@
                     Write-Verbose "$($tab)Recursing through non-array node"
                     $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
                 }
+            } else { 
+                Write-Verbose "Here"
             }
         }
     }
