@@ -18,7 +18,6 @@
             "Server/ConnectionContext", # Not needed
             "Server/OleDbProviderSettings", # Buggy
             "Server/Languages", # Not needed
-            "Server/ServiceMasterKey", # Empty
             "Server/SystemDataTypes", # Not needed
             "Server/SystemMessages", # Not needed       
 
@@ -35,6 +34,7 @@
             "Server/Database/Rules", # Not needed            
             "Server/Database/Schemas", # Not needed
             "Server/Database/Sequences", # Not needed
+            # "Server/Database/ServiceBroker", # Not needed
             # Service Broker - This leaves Queues, Routes, RemoteserviceBindings, and Priorities
             "Server/Database/ServiceBroker/MessageTypes", # Not needed
             "Server/Database/ServiceBroker/ServiceContracts", # Not needed
@@ -115,9 +115,8 @@
                 # If there's no Urn property on the object we received, these "prior" properties are used to construct a path for 
                 # a) checking against exclusions and indirectly 
                 # b) the table name
-                [string] $ParentPath,
-                [string] $ParentPropertyName,
-                $ParentPrimaryKeyColumns
+                [string] $parentPath,
+                [string] $parentPropertyName
             )
             
             $Depth++
@@ -132,8 +131,8 @@
             # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
             # its own Urn so in those cases we can fall back to the parent path plus property name.
             if (!$InputObject.psobject.Properties["Urn"]) {
-                if ($ParentPath -and $ParentPropertyName) {
-                    $path = "$path/$ParentPropertyName"
+                if ($parentPath -and $parentPropertyName) {
+                    $path = "$path/$parentPropertyName"
                     Write-Verbose "$($tab)Working on prior $path"
                 } else {
                     Write-Error "$($tab)No Urn, and no parent details, this shouldn't have happened"
@@ -222,72 +221,8 @@
                 Write-Verbose "$($tab)Adding table $tableName"
                 $table = $OutputObject.Tables.Add($tableName)
             }
-
-            # Create a row but this isn't added to the table until all properties (and sub properties) have been processed on the row.
-            # But the row must be created BEFORE we calculate primary keys, so we can add the values for each key item.
+            # Create a row but this isn't added to the table until all properties (and sub properties) have been processed on the row
             $row = $table.NewRow()
-
-            # We need to populate primary keys (and add the columns if necessary)
-            Write-Verbose "$($tab)Calculating primary keys"
-            $primaryKeyColumns = @()
-            $foreignKeyColumns = @()
-
-            # Primary key constraints are only made on the Urn, even if it's not the most current one. We apply fixups later.
-            for ($i = 0; $i -lt $urn.XPathExpression.Length; $i++) {
-                $key = $urn.XPathExpression.Item($i)
-
-                # Iterate through each part of the URN; e.g. the Server part, the Database part, the User part.
-                foreach ($keyProperty in $key.FixedProperties.GetEnumerator()) {
-                    
-                    if ($i -eq ($urn.XPathExpression.Length - 1) -and $InputObject.psobject.Properties["Urn"]) {
-                        # If we are on the last part of the Urn, and the current row has a Urn, we use the proper name
-                        # (because this last name is the one that will be used on the current row as a property already)
-                        $keyPropertyName = $keyProperty.Name
-                    } else {
-                        # Otherwise we prefix names with the parent path name. We do this so that we don't get collisions
-                        # on things like Name; instead renaming them to ServerName, DatabaseName, etc, in the current row.
-                        # Also, if we were on the last step, but there is no Urn, then it means we still need to do this;
-                        # as the current row will be using a different current property name already, it's just not part
-                        # of the key yet (as far as we know, it will be "fixed" by adding it manually a bit later).
-                        $keyPropertyName = "$($key.Name)$($keyProperty.Name)"
-                    }
-                    # Examples:
-                    #   /Server Key = Name                
-                    #   /Server/Database Key = ServerName, Name
-                    #   /Server/Mail/MailProfile = ServerName, Name (as Mail does not have a key)
-                    #   /Server/Database/User/DefaultLanguage (no Urn) = ServerName, DatabaseName, UserName
-
-                    # This is the key itself
-                    $keyPropertyValue = $keyProperty.Value.Value
-
-                    if (!$table.Columns[$keyPropertyName]) {
-                        $column = New-Object System.Data.DataColumn
-                        $column.ColumnName = $keyPropertyName
-                        $column.DataType = switch ($keyProperty.Value.ObjType) { "String" { "System.String" } "Boolean" { "System.Boolean" } "Number" { "System.Int32" } } 
-                        if ($column.DataType -eq [string]) { # Not a bug, it really is equal, not is
-                            $column.MaxLength = 128
-                        }
-                        $table.Columns.Add($column)
-
-                        Write-Verbose "$($tab)Key $keyPropertyName added"
-                    } else {
-                        Write-Verbose "$($tab)Key $keyPropertyName already exists"
-                    }
-                    $primaryKeyColumns += $table.Columns[$keyPropertyName]
-
-                    # Our local foreign key columns are everything except the last key (unless we have no Urn, in which case the last key doesn't exist yet)
-                    if ($i -ne ($urn.XPathExpression.Length - 1) -or !$InputObject.psobject.Properties["Urn"]) {
-                        $foreignKeyColumns += $table.Columns[$keyPropertyName]
-                    }
-
-                    if ($keyPropertyValue -eq $null) {
-                        Write-Error "$($tab)Null value in primary key, this shouldn't happen"
-                    } else {
-                        $row[$keyPropertyName] = $keyPropertyValue
-                    }
-                }
-            }
-            # Finished looping primary keys
 
             # Get a list of properties to process; but remove the ones that match the wildcards in our exclusion list
             $properties = $InputObject.psobject.Properties | %{
@@ -303,37 +238,36 @@
                 $propertyName = $property.Name
                 $propertyType = $property.TypeNameOfValue
 
-                # SMO has a bug which throws an exception if you try to iterate through this property.
+                # This fails if you try to resolve property.value
                 if ($propertyName -eq "OleDbProviderSettings" -and $propertyType -eq "Microsoft.SqlServer.Management.Smo.OleDbProviderSettingsCollection") {
-                    Write-Verbose "$($tab) Skipping $property because it's a bug"
+                    Write-Verbose "$($tab) Skipping $property because it's poisonous"
                     continue
                 }
 
-                # SMO throws an exception when it automatically creates some objects in collections, like Certificates, 
-                # and you try to iterate through them without populating them first.
                 if ($properties.psobject.Properties["State"] -and $properties.psobject.Properties["State"].Value -eq "Creating") {
-                    Write-Verbose "$($tab)Skipping $propertyName because it is not a real record"
+                    Write-Verbose "$($tab)Skipping $propertyName because it has a Creating value which will throw errors"
                     continue
                 }
 
+                $propertyValue = $property.Value               
+   
                 # These are handled as properties on the main object, the real property collection doesn't need to be touched
-                if ($propertyType -like "Microsoft.SqlServer.Management.Smo.*PropertyCollection") {
+                if ($propertyValue -and $propertyType -like "Microsoft.SqlServer.Management.Smo.*PropertyCollection") {
                     Write-Verbose "$($tab)Completely skipping $propertyName as it is a property collection"
                     continue
                 }
 
-                $propertyValue = $property.Value  
-
-                # This addresses specific Server/Configuration entries which have not been filled out, causing an exception
-                # when you add them to the table while constraints exist.
-                if ($propertyValue -is [Microsoft.SqlServer.Management.Smo.ConfigProperty] -and $propertyValue.Number -eq 0) {
+                if ($propertyValue -is [Microsoft.SqlServer.Management.Smo.ConfigProperty]) {
+                    if ($propertyValue.Number -eq 0) {
                         Write-Verbose "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
-                        # Exit to the caller immediately. We don't want to add this row or other properties to the table at all.
-                        return $OutputObject
-                } elseif ($propertyValue -is [System.Collections.ICollection] -and $propertyType -ne "System.Byte[]") {
+                        $OutputObject
+                        return
+                    }
+                } elseif ($propertyType -like "Microsoft.SqlServer.Management.Smo.*" -and "$propertyValue" -eq $propertyType) {
+                    Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue (matches type name)"
+                } elseif ($propertyValue -is [System.Collections.ICollection]) {
                     Write-Verbose "$($tab)Processing property $propertyName collection"
                 } else {
-                    # We can handle Byte[] as Varbinary, and we manually skip the collection portion/other properties later
                     Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
 
                     if (!$table.Columns[$propertyName]) {
@@ -343,9 +277,6 @@
                         $table.Columns.Add($column)
                     }
 
-                    # Go to the next variable if we have a null for the property; we don't want to try to read it below.
-                    # It can cause a failure in the ADO.NET translation, and also if we try to access the properties to
-                    # determine if it's a collection or not.
                     if ($propertyValue -eq $null) {
                         Write-Debug "$($tab)Skipping Null value"
                         continue
@@ -354,7 +285,9 @@
                     }
                 }
 
-                if ($propertyValue -is [System.Byte[]] -or 
+                $isArray = @($propertyValue).Count -gt 0
+
+                if ($propertyType -eq "System.Byte[]" -or 
                     $propertyValue -is [System.DateTime] -or 
                     $propertyValue -is [System.Enum] -or 
                     $propertyValue -is [System.Guid] -or 
@@ -371,78 +304,109 @@
                         if ($propertyValue -is [System.Collections.ICollection] -and $propertyValue.Count -gt 0) {
                             foreach ($item in $propertyValue.GetEnumerator()) {
                                 Write-Verbose "$($tab)Recursing through collection"
-                                $OutputObject = Recurse-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                                $Output = Recurse-Smo $item $OutputObject $Depth $path $propertyName # -ColumnSet $ColumnSet
                             }
-                        } elseif ($tableName -eq "Configuration") {
-                            # We have a special case for this. Because we're flattening it into one table, we need to pass
-                            # the parent primary key columns, instead of our own.
+                        } elseif ($isArray) {
                             foreach ($item in @($propertyValue)) {
                                 Write-Verbose "$($tab)Recursing through array node"
-                                $OutputObject = Recurse-Smo $item $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
-                            }    
-                        } elseif ($propertyValue -is [System.Array]) {
-                            foreach ($item in @($propertyValue)) {
-                                Write-Verbose "$($tab)Recursing through array node"
-                                $OutputObject = Recurse-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                                $Output = Recurse-Smo $item $OutputObject $Depth $path $propertyName # -ColumnSet $ColumnSet
                             }    
                         } else {
                             Write-Verbose "$($tab)Recursing through non-array node"
-                            $OutputObject = Recurse-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                            $OutputObject = Recurse-Smo $propertyValue $OutputObject $Depth $path $propertyName # -ColumnSet $ColumnSet
                         }
                     }
                 }
+
+                # End section for looping properties
             }
-            # Finished looping properties
 
-            # Do primary key fixups (additional key columns) for properties without a full Urn. this has to be done
-            # after all of the properties have been looped above, otherwise the column won't exist yet (we could
-            # create it but then we need to think of data types again, and duplicates effort).
-            switch ($tableName) {
-                "Configuration" {
-                    $primaryKeyColumns += $table.Columns["Number"]
-                }
+            # We need to populate primary keys (and add the columns if necessary)
+            $primaryKeyColumns = @()
+            $foreignKeyColumns = @() # This would be more complicated and isn't implemented yet
+                
+            # Primary key constraints are only made on the Urn, even if it's not the most current one. We apply fixups later.
+            for ($i = 0; $i -lt $urn.XPathExpression.Length; $i++) {
+                $key = $urn.XPathExpression.Item($i)
 
-                "Cpus" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
-                "NumaNodes" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
-                "NumaNodesCpus" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
+                # Iterate through each part of the URN; e.g. the Server part, the Database part, the User part.
+                foreach ($property in $key.FixedProperties.GetEnumerator()) {
+                    
+                    if ($i -eq ($urn.XPathExpression.Length - 1) -and $InputObject.psobject.Properties["Urn"]) {
+                        # If we are on the last part of the Urn, and the current row has a Urn, we use the proper Name
+                        $propertyName = $property.Name
+                    } else {
+                        # Otherwise we prefix names with the parent path name
+                        $propertyName = "$($key.Name)$($property.Name)"
+                    }
+                    # Examples:
+                    #   /Server Key = Name                
+                    #   /Server/Database Key = ServerName, Name
+                    #   /Server/Database/User/DefaultLanguage (no Urn) = ServerName, DatabaseName, UserName (and where Name is non-Key and the language name)
+                    #   /Server/Mail/MailProfile = ServerName, Name (as Mail does not have a key)
 
-                "ResourcePoolCpus" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
-                "ResourcePoolNumaNodes" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
-                "ResourcePoolNumaNodesCpus" {
-                    $primaryKeyColumns += $table.Columns["ID"]
-                }
+                    # This is the key itself
+                    $propertyValue = $property.Value.Value
 
-                "Schedulers" {
-                    $primaryKeyColumns += $table.Columns["ID"]
+                    if (!$table.Columns[$propertyName]) {
+                        $column = New-Object System.Data.DataColumn
+                        $column.ColumnName = $propertyName
+                        $column.DataType = switch ($property.Value.ObjType) { "String" { "System.String" } "Boolean" { "System.Boolean" } "Number" { "System.Int32" } } 
+                        if ($column.DataType -eq [string]) { # Not a bug, it really is equal, not is
+                            $column.MaxLength = 128
+                        }
+                        $table.Columns.Add($column)
+
+                        Write-Verbose "$($tab)Key $propertyName added"
+                    } else {
+                        Write-Verbose "$($tab)Key $propertyName already exists"
+                    }
+                    $primaryKeyColumns += $table.Columns[$propertyName]
+
+                    if ($propertyValue -eq $null) {
+                        Write-Debug "$($tab)Skipping Null value"
+                        continue
+                    } else {
+                        $row[$propertyName] = $propertyValue
+                    }
                 }
             }
+            # Finished looping primary keys
 
             # If there's no primary key on the table already then we'll add it
             if (!$table.PrimaryKey) {
-                try { 
-                    Get-PSBreakpoint -Variable StackTrace | Remove-PSBreakpoint
-                    $table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true) | Out-Null
-                 } catch {
-                    Write-Verbose "$($tab)$_"
-                    Set-PSBreakpoint -Variable StackTrace | Out-Null
-                } 
-                
-                # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
-                if ($foreignKeyColumns.Count -gt 0 -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
-                    $foreignKeyConstraint = New-Object System.Data.ForeignKeyConstraint("FK_$tableName", $ParentPrimaryKeyColumns, $foreignKeyColumns)
-                    $table.Constraints.Add($foreignKeyConstraint) | Out-Null
+                # But first do fixups (additional key columns) for properties without a full Urn.
+                switch ($tableName) {
+                    "Configuration" {
+                        $primaryKeyColumns += $table.Columns["Number"]
+                    }
+
+                    "Cpus" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+                    "NumaNodes" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+                    "NumaNodesCpus" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+
+                    "ResourcePoolCpus" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+                    "ResourcePoolNumaNodes" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+                    "ResourcePoolNumaNodesCpus" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
+
+                    "Schedulers" {
+                        $primaryKeyColumns += $table.Columns["ID"]
+                    }
                 }
-                
+
+                $table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true) | Out-Null
             }
 
             # With the table columns defined, and primary keys defined, and row filled out, we can now add it to the table
@@ -469,9 +433,7 @@
 
     Process {
         $InputObject | %{
-            $ds = New-Object System.Data.DataSet
-            $ds.EnforceConstraints = $false
-            Recurse-Smo $_ $ds
+            Recurse-Smo $_ (New-Object System.Data.DataSet)
         }
     }
 }
