@@ -1,0 +1,44 @@
+You can get this working by just disabling the bit that creates foreign key constraints.
+
+It doesn't work if the primary key hasn't been created on the lower table first. Otherwise it creates a unique
+constraint, and then causes an error if you try to create the primary key afterwards.
+
+Also foreign key violations are in these:
+$smods.tables | %{ if ($_.geterrors()) { $_.TableName} } 
+NumaNodes
+Schedulers
+ResourcePoolNumaNodes
+           
+1. Alter the Create Smo DataTable to include the Primary Key
+2a. Bulk Insert ManagedComputer and Server schemas
+2b. When it fails to Insert, retry after attempting to recreate specific columns
+3. Add Foreign Key constraint generation
+4a. Alter the Create Smo DataTable to include the Foreign Key
+4b. 
+5. Need to split between 2012/2014 WMI
+
+
+----
+
+                <# # This was commented out because it didn't catch some things... like $smo.ProxyAccount being filled with a server name
+                } elseif ($propertyType -like "Microsoft.SqlServer.Management.Smo.*" -and "$propertyValue" -eq $propertyType) {
+                    Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue (matches type name)"
+                #>
+
+
+# Set-PSBreakpoint -Variable StackTrace -Mode Write
+# Get-PSBreakpoint | Remove-PSBreakpoint
+
+Clear
+
+$serverInstance = "."
+$smo = New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance)
+$dsSmo = ConvertFrom-Smo $smo -Verbose
+
+$serverInstance = "."
+$wmi = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($serverInstance)
+$dsWmi = ConvertFrom-Smo $wmi -Verbose # Also works on SSRS only installs
+
+$dsWmi.EnforceConstraints = $true
+$dsSmo.EnforceConstraints = $true
+$dsSmo.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
