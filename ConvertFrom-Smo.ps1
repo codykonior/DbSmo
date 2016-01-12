@@ -1,145 +1,4 @@
-﻿Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-Import-Module SQLPS -DisableNameChecking
-Set-Location C:\Temp
-
-function Get-SmoDataSetType {
-    [CmdletBinding()]    
-    param (
-        $TypeName
-    )
-
-    $typeList = @(
-        "System.Boolean",
-        "System.Byte[]",
-        "System.Byte",
-        "System.Char",
-        "System.Datetime",
-        "System.Decimal",
-        "System.Double",
-        "System.Guid",
-        "System.Int16",
-        "System.Int32",
-        "System.Int64",
-        "System.Single",
-        "System.UInt16",
-        "System.UInt32",
-        "System.UInt64"
-        )
-    
-    if ($typeList -contains $TypeName) {
-        $TypeName
-    } else {
-        "System.String"
-    }
-} 
-
-function ConvertFrom-SmoExclusions {
-    [CmdletBinding()]
-    param (
-    )
-
-    # These are exclusions of property paths that fall into some sommon categories:
-    #   Connect specific stuff that isn't needed
-    #   SMO Bugs when accessing information
-    #   Massive data transfers (system types, etc)
-    #   Database-specific stuff (aside from the properties, users, and other things of general importance)
-    #   Properties that are always empty or meaningless
-    #   Properties that are duplicated elsewhere in the tree that we know about
-    @(
-        "Server/ConnectionContext", # Not needed
-        "Server/OleDbProviderSettings", # Buggy
-        "Server/Languages", # Not needed
-        "Server/ServiceMasterKey", # Empty
-        "Server/SystemDataTypes", # Not needed
-        "Server/SystemMessages", # Not needed       
-
-        "Server/Database/ActiveConnections", # Not needed
-        "Server/Database/Assemblies", # Not needed
-        "Server/Database/AsymmetricKeys", # Not needed
-        "Server/Database/DatabaseAuditSpecifications", # Not needed
-        "Server/Database/DatabaseEncryptionKey", # Not needed
-        "Server/Database/Events", # Not needed
-        "Server/Database/ExtendedStoredProcedures", # Not needed
-        "Server/Database/PartitionFunctions", # Not needed
-        "Server/Database/PartitionSchemes", # Not needed
-        "Server/Database/PlanGuides", # Not needed
-        "Server/Database/Rules", # Not needed            
-        "Server/Database/Schemas", # Not needed
-        "Server/Database/Sequences", # Not needed
-        # Service Broker - This leaves Queues, Routes, RemoteserviceBindings, and Priorities
-        "Server/Database/ServiceBroker/MessageTypes", # Not needed
-        "Server/Database/ServiceBroker/ServiceContracts", # Not needed
-        "Server/Database/ServiceBroker/Services", # Not needed
-        # Service Broker
-        "Server/Database/StoredProcedures", # Not needed            
-        "Server/Database/Synonyms", # Not needed
-        "Server/Database/Tables", # Not needed
-        "Server/Database/Triggers", # Not needed
-        "Server/Database/UserDefined*", # Not needed
-        "Server/Database/Views", # Not needed
-        "Server/Database/XmlSchemaCollections", # Not needed
-        
-        "*/IsDesignMode", # Not needed
-        "*/Parent", # Prevent recursion
-        "*/State", # Not needed
-        "*/Urn", # Flattened elsewhere
-        "*/UserData", # Empty
-
-        # These are duplicated in the System/Information schema; $smo.Information.psobject.Properties | Select -ExpandProperty Name | Sort | %{ "`"Server/$_`"," } 
-        "Server/BuildClrVersion",
-        "Server/BuildClrVersionString",
-        "Server/BuildNumber",
-        "Server/Collation",
-        "Server/CollationId",
-        "Server/ComparisonStyle",
-        "Server/ComputerNamePhysicalNetBIOS",
-        "Server/Edition",
-        "Server/EngineEdition",
-        "Server/ErrorLogPath",
-        "Server/FullyQualifiedNetName",
-        "Server/IsCaseSensitive",
-        "Server/IsClustered",
-        "Server/IsFullTextInstalled",
-        "Server/IsHadrEnabled",
-        "Server/IsSingleUser",
-        "Server/IsXTPSupported",
-        "Server/Language",
-        "Server/MasterDBLogPath",
-        "Server/MasterDBPath",
-        "Server/MaxPrecision",
-        "Server/NetName",
-        "Server/OSVersion",
-        "Server/Parent",
-        "Server/PhysicalMemory",
-        "Server/Platform",
-        "Server/Processors",
-        "Server/Product",
-        "Server/ProductLevel",
-        "Server/Properties",
-        "Server/ResourceLastUpdateDateTime",
-        "Server/ResourceVersion",
-        "Server/ResourceVersionString",
-        "Server/RootDirectory",
-        "Server/SqlCharSet",
-        "Server/SqlCharSetName",
-        "Server/SqlSortOrder",
-        "Server/SqlSortOrderName",
-        "Server/State",
-        "Server/Urn",
-        "Server/UserData",
-        "Server/Version",
-        "Server/VersionMajor",
-        "Server/VersionMinor",
-        "Server/VersionString",
-
-        # Wmi
-        "ManagedComputer/ConnectionSettings"
-    )
-
-}
-
-function ConvertFrom-Smo {
+﻿function ConvertFrom-Smo {
     [Cmdletbinding()]
     param (
         [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
@@ -339,6 +198,7 @@ function ConvertFrom-Smo {
     }
     Write-Debug "$($tab)Properties $($properties | Select -ExpandProperty Name)"
 
+    $writeRow = $true
     $recurseProperties = @()
     foreach ($property in $properties) {
         $propertyName = $property.Name
@@ -365,38 +225,46 @@ function ConvertFrom-Smo {
 
         $propertyValue = $property.Value  
 
+        if ($urn.tostring() -eq "Server[@Name='.']/Database[@Name='DB']/User[@Name='INFORMATION_SCHEMA']" -and $propertyName -eq "sid") {
+            Write-verbose "Here"
+        }
+
         # This addresses specific Server/Configuration entries which have not been filled out, causing an exception
         # when you add them to the table while constraints exist.
         if ($propertyType -eq "Microsoft.SqlServer.Management.Smo.ConfigProperty") { # It's important to use this instead of a check; because UserInstanceTimeout can be a Null value type
             if ($propertyValue -eq $null -or $propertyValue.Number -eq 0) {
                 Write-Verbose "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
                 continue
-                # Exit to the caller immediately. We don't want to add this row or other properties to the table at all.
             } else {
-                if ($propertyValue.DisplayName -eq "server trigger recursion") {
-                    Write-Host "Next one!"
-                }
-
-                Write-Verbose "$($tab)Doing special for $propertyName collection"
+                Write-Verbose "$($tab)Processing config property $propertyName"
 
                 $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
-                continue # We don't need it added to recursion
+                $writeRow = $false
+                continue # We don't need it added to recursion, we do need to make sure the raw row is never added though
             }
-        } elseif ($propertyValue -is [System.Collections.ICollection] -and $propertyType -ne "System.Byte[]") {
-            Write-Verbose "$($tab)Processing property $propertyName collection"
+        } elseif ($propertyValue -is [System.Collections.ICollection] -and $propertyValue -isnot [System.Byte[]]) {
+            Write-Debug "$($tab)Processing property $propertyName collection"
+            # We want to drop below to recurse properties
         } else {
-            if ($propertyName -eq "Configuration" -and $tableName -eq "Server") {
-                Write-Verbose "Here"
-            }
-            
-            # We can handle Byte[] as Varbinary, and we manually skip the collection portion/other properties later
+            # We can handle [System.Byte[]] as Varbinary, and we manually skip the collection portion/other properties later
             Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
 
             if (!$table.Columns[$propertyName]) {
                 $column = New-Object System.Data.DataColumn
                 $column.ColumnName = $propertyName
-                $column.DataType = Get-SmoDataSetType $propertyType
-                $table.Columns.Add($column)
+                if (!(Get-SmoDataSetType $propertyType)) {
+                    Write-Verbose "$($tab)Skipped writing out the raw column because it doesn't look right; it may be recursed instead"
+
+                    if ($propertyValue -eq $null) {
+                        continue
+                    } else {
+                        $recurseProperties += $property
+                        continue
+                    }
+                } else {
+                    $column.DataType = Get-SmoDataSetType $propertyType
+                    $table.Columns.Add($column)
+                }
             }
 
             # Go to the next variable if we have a null for the property; we don't want to try to read it below.
@@ -406,8 +274,9 @@ function ConvertFrom-Smo {
                 Write-Debug "$($tab)Skipping Null value"
                 continue
             } else {
-                $row[$propertyName] = $propertyValue
-            
+                if ($propertyValue -isnot [System.DateTime] -or $propertyValue.Ticks -ne 0) { # Leave it null if this is the case, that's how SMO represents it
+                    $row[$propertyName] = $propertyValue
+                }
             }
         }
 
@@ -477,10 +346,6 @@ function ConvertFrom-Smo {
 
     # Part 2 is where we go through and start recursing things
     foreach ($property in $recurseProperties) {
-        if ($property.Name -eq "Configuration") { 
-                Write-Verbose "Here" 
-        } 
-
         $propertyName = $property.Name
         $propertyValue = $property.Value  
 
@@ -495,12 +360,32 @@ function ConvertFrom-Smo {
             ) {
             Write-Debug "$($tab)No recursion necessary; it's an empty collection or other simple type"
         } else {
+            ## Really need to check why/if this is needed
+            try { 
+                $a = $propertyValue.PSObject.Properties
+            } catch { 
+                Write-Verbose "Caught"
+            }
             if (@($propertyValue.psobject.Properties).Count -gt 1) {
-                if ($propertyValue -is [System.Collections.ICollection] -and $propertyValue.Count -gt 0) {
-                    foreach ($item in $propertyValue.GetEnumerator()) {
+                if ($propertyValue -is [System.Collections.ICollection]) {
                         Write-Verbose "$($tab)Recursing through collection"
-                        $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
-                    }
+                        try {
+                            foreach ($item in $propertyValue.GetEnumerator()) {
+                                
+                                $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                            }
+                        } catch [Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException] {
+                            # Happens when trying to access availability groups etc on a lower version
+                        } catch [System.Data.SqlClient.SqlException] {
+                            <# Number Class State = Message Number, Severity, State #>
+                            if ($_.Exception.InnerException.InnerException.Number -eq 954 -and $_.Exception.InnerException.InnerException.Class -eq 14 -and $_.Exception.InnerException.InnerException.State -eq 1) {
+                                Write-Verbose "Ok"
+                            } else {
+                                throw
+                            }
+                        } catch {
+                            Write-Verbose "Here"
+                        }
                 } elseif ($tableName -eq "Configuration") {
                     # We have a special case for this. Because we're flattening it into one table, we need to pass
                     # the parent primary key columns, instead of our own.
@@ -521,14 +406,17 @@ function ConvertFrom-Smo {
         }
     }
     # Finished looping properties
-    
-    # With the table columns defined, and primary keys defined, and row filled out, we can now add it to the table
-    Write-Verbose "$($tab)Writing row for $tableName"
-    try {
-        $table.Rows.Add($row)
-    } catch {
-        # Choke point for exceptions
-        Write-Error "$($tab)Exception: $_"
+
+    # We set an exception not to write the row if it's part of the Configuration collection (as we write them separately)
+    if ($writeRow) {
+        Write-Verbose "$($tab)Writing row for $tableName"
+        
+        try {
+            $table.Rows.Add($row)
+        } catch {
+            # Choke point for exceptions
+            Write-Error "$($tab)Exception: $_"
+        }
     }
 
     if ($table.Columns.Count -le $urn.XPathExpression.Length) {

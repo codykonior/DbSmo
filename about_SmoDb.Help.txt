@@ -1,3 +1,47 @@
+9. It looks like lots of tables aren't being generated anymore, maybe broken by the non-array recurse being changed for the collection.
+
+0. Reduce logging, like on a property collection before the recurse?
+
+1. Seems to include Server/Database/Default for some reason.
+
+VERBOSE: 	Recursing through collection
+VERBOSE: 		Working on Server[@Name='.']/Database[@Name='msdb']/Default[@Name='default_current_date' and @Schema='dbo'], the skeleton path is Server/Database/Default
+VERBOSE: 		Adding table Default
+VERBOSE: 		Calculating primary keys
+
+2a. Exception while enumerating availability group?
+
+VERBOSE: Recursing through non-array node
+Exception on .; The following exception occurred while trying to enumerate the collection: "Operation not supported on version 10.0.6000.".
+
+2b. Exception while enumerating databases on a mirrored instance
+
+4. (Seems fixed)
+Also in the Ops table there are a bunch of dummy stuff. I need to work out why these aren't being treated as proper collections.
+
+select 'Select ''' + schema_name(t.schema_id) + '.' + t.name + ''', * From ' + schema_name(t.schema_id) + '.' + t.name
+from sys.tables t
+join sys.columns c
+on t.object_id = c.object_id
+where c.name = 'syncroot'
+order by t.name
+
+Select 'smo.ApplicationRoles', * From smo.ApplicationRoles
+Select 'smo.AvailabilityGroups', * From smo.AvailabilityGroups
+Select 'smo.Certificates', * From smo.Certificates
+Select 'smo.Defaults', * From smo.Defaults
+Select 'smo.FileGroups', * From smo.FileGroups
+Select 'smo.FullTextCatalogs', * From smo.FullTextCatalogs
+Select 'smo.FullTextStopLists', * From smo.FullTextStopLists
+Select 'smo.LogFiles', * From smo.LogFiles
+Select 'smo.Priorities', * From smo.Priorities
+Select 'smo.Queues', * From smo.Queues
+Select 'smo.RemoteServiceBindings', * From smo.RemoteServiceBindings
+Select 'smo.Roles', * From smo.Roles
+Select 'smo.Routes', * From smo.Routes
+Select 'smo.SymmetricKeys', * From smo.SymmetricKeys
+Select 'smo.Users', * From smo.Users
+
 1. Bulk Insert ManagedComputer and Server schemas
 2. When it fails to Insert, retry after attempting to recreate specific columns
 
@@ -16,38 +60,116 @@ ResourcePoolNumaNodes
 2a. Bulk Insert ManagedComputer and Server schemas
 2b. When it fails to Insert, retry after attempting to recreate specific columns
 3. Add Foreign Key constraint generation
-4a. Alter the Create Smo DataTable to include the Foreign Key
-4b. 
+4. Alter the Create Smo DataTable to include the Foreign Key
 5. Need to split between 2012/2014 WMI
 
 
 ----
 
-                <# # This was commented out because it didn't catch some things... like $smo.ProxyAccount being filled with a server name
-                } elseif ($propertyType -like "Microsoft.SqlServer.Management.Smo.*" -and "$propertyValue" -eq $propertyType) {
-                    Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue (matches type name)"
-                #>
+$instances = @(".")
+foreach ($serverInstance in $instances) {
+    Write-Host "Doing $serverInstance"
 
+    try {
+        $smo = New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance)
+        # $wmi = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($serverInstance)
 
-# Set-PSBreakpoint -Variable StackTrace -Mode Write
-# Get-PSBreakpoint | Remove-PSBreakpoint
+        $dsSmo = ConvertFrom-Smo $smo -Verbose
+        try {
+            $dsSmo.EnforceConstraints = $true
+        } catch {
+            $dsSmo.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
+        }
 
-Clear
+        $schemaName = "smo"
+        $tables = ConvertFrom-DataSet $opsServerInstance $opsDatabaseName $schemaName $dsSmo -Verbose
+        Invoke-SqlCmd -ServerInstance $opsServerInstance -Database $opsDatabaseName -Query "Alter Table smo.[Database] Alter Column MirroringFailoverLogSequenceNumber Decimal(25, 0) Null"
+        $sqlConnection = New-Object System.Data.SqlClient.SqlConnection("Server=$opsServerInstance;Database=$opsDatabaseName;Trusted_Connection=True")
+        $sqlConnection.Open()
+        $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($sqlConnection)
 
-$serverInstance = "."
-$smo = New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance)
-$dsSmo = ConvertFrom-Smo $smo -Verbose
-try {
-    $dsSmo.EnforceConstraints = $true
-} catch {
-    $dsSmo.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
+        $dsSmo.Tables | %{
+            Write-Host "Writing $($_.TableName)"
+            $bulkCopy.DestinationTableName = "[$schemaName].[$($_.TableName)]"
+            # Required in case we've added columns, they will not be in order, and as long as you specify the names here it will all work okay
+            $bulkCopy.ColumnMappings.Clear()
+            $_.Columns | %{ 
+                $bulkCopy.ColumnMappings.Add((New-Object System.Data.SqlClient.SqlBulkCopyColumnMapping($_.ColumnName, $_.ColumnName))) | Out-Null
+            }
+            $bulkCopy.WriteToServer($_)
+        }
+    } catch {
+        Write-Host "Exception on $serverInstance; $_"
+    }
 }
 
-$serverInstance = "."
-$wmi = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($serverInstance)
-$dsWmi = ConvertFrom-Smo $wmi -Verbose # Also works on SSRS only installs
-try {
-    $dsWmi.EnforceConstraints = $true
-} catch {
-    $dsWmi.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
-}
+Write-Host "Finished at $(Get-Date)"
+# Alter Table smo.[Database] Alter Column MirroringFailoverLogSequenceNumber Decimal(25, 0) Null
+
+
+Setup script:
+-------------
+
+Use master
+If Db_Id('Ops') Is Not Null
+Begin    
+    Alter Database Ops Set Single_User With Rollback Immediate
+    Drop Database Ops
+End
+Go
+Create Database Ops
+Go
+Use Ops
+Go
+Create Schema wmi
+Go
+Create Schema smo
+Go
+
+Create Procedure dbo.ClearSchema
+    @SchemaName Sysname
+As
+Begin
+    Set Nocount On
+
+    Declare @Commands Table (
+        Command Nvarchar(Max)
+    )
+
+    Insert  @Commands
+    Select  'Alter Table ' + Quotename(@SchemaName) + '.' + Quotename(o.name) + ' Drop Constraint ' + Quotename(f.name)
+    From    sys.objects o
+    Join    sys.foreign_keys f
+    On      o.object_id = f.parent_object_id
+    Where   o.schema_id = Schema_Id(@SchemaName)
+
+    Insert  @Commands
+    Select  'Alter Table ' + Quotename(@SchemaName) + '.' + Quotename(o.name) + ' Drop Constraint ' + Quotename(i.name)
+    From    sys.objects o
+    Join    sys.indexes i
+    On      o.object_id = i.object_id
+    Where   o.schema_id = Schema_Id(@SchemaName)
+    And     i.is_primary_key = 1
+
+    Insert  @Commands
+    Select  'Drop Table ' + Quotename(@SchemaName) + '.' + Quotename(o.name)
+    From    sys.objects o
+    Where   o.schema_id = Schema_Id(@SchemaName)
+
+    Declare @Command Nvarchar(Max)
+
+    Declare ClearSchema Cursor Static Forward_Only Read_Only Static For
+    Select  Command
+    From    @Commands
+    Open    ClearSchema
+    Fetch Next From ClearSchema Into @Command
+    While   @@Fetch_Status = 0
+    Begin
+            Print @Command
+            Exec sp_executesql @Command
+            Fetch Next From ClearSchema Into @Command
+    End
+    Close   ClearSchema
+    Deallocate ClearSchema
+End
+Go
