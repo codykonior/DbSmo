@@ -69,7 +69,10 @@ function ConvertFrom-DataSet {
             # If the SMO table has a primary key but the new/existing table doesn't
             if ($table.PrimaryKey) {
                 if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
-                    $primaryKeyName = $table.Constraints | Where { $_.IndexKeyType -eq "DriPrimaryKey" } | Select -ExpandProperty Name
+                    try { $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
+                    } catch { 
+                    $_ 
+                    } 
                     Write-Verbose "Adding primary key $primaryKeyName"
 
                     $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
@@ -91,7 +94,7 @@ function ConvertFrom-DataSet {
                 Write-Verbose "Warning: $tableName doesn't have a primary key!"
             }
         } catch {
-            $_
+            Write-Error $_
         }
     }
 
@@ -119,7 +122,7 @@ function ConvertFrom-DataSet {
                     $foreignKey.Create()
                 }
             } catch {
-                $_
+                Write-Error $_
             }
         }
     }
