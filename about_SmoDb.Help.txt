@@ -1,3 +1,6 @@
+1. Bulk Insert ManagedComputer and Server schemas
+2. When it fails to Insert, retry after attempting to recreate specific columns
+
 You can get this working by just disabling the bit that creates foreign key constraints.
 
 It doesn't work if the primary key hasn't been created on the lower table first. Otherwise it creates a unique
@@ -8,7 +11,7 @@ $smods.tables | %{ if ($_.geterrors()) { $_.TableName} }
 NumaNodes
 Schedulers
 ResourcePoolNumaNodes
-           
+
 1. Alter the Create Smo DataTable to include the Primary Key
 2a. Bulk Insert ManagedComputer and Server schemas
 2b. When it fails to Insert, retry after attempting to recreate specific columns
@@ -34,11 +37,17 @@ Clear
 $serverInstance = "."
 $smo = New-Object Microsoft.SqlServer.Management.Smo.Server($serverInstance)
 $dsSmo = ConvertFrom-Smo $smo -Verbose
+try {
+    $dsSmo.EnforceConstraints = $true
+} catch {
+    $dsSmo.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
+}
 
 $serverInstance = "."
 $wmi = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($serverInstance)
 $dsWmi = ConvertFrom-Smo $wmi -Verbose # Also works on SSRS only installs
-
-$dsWmi.EnforceConstraints = $true
-$dsSmo.EnforceConstraints = $true
-$dsSmo.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
+try {
+    $dsWmi.EnforceConstraints = $true
+} catch {
+    $dsWmi.Tables | %{ if ($_.GetErrors()) { $_.TableName; $_.GetErrors() }} 
+}
