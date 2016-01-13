@@ -2,6 +2,10 @@ To Do
 -----
 remove word exception from: VERBOSE: Collection not valid on this version; Exception calling "GetEnumerator" with "0" argument(s): "Operation not supported on version 10.50.6000."
 
+Add computer name to exceptions
+Resolve-Error to include parameters for function calls in prior scopes?
+Test-SQLPS and Fix-SQLPS
+
 add a tracking number / start end time thing
 add more fine grained time tracking, like cumulative per path per server
 add more error tracking where the write-verbose are, along with descriptions of why; add breakpoints
@@ -123,6 +127,22 @@ Check:
     So I had to replace it with what I have now and it's very buggy here but the worst case is if
     the exception throws its own exception and doesn't describe accurately what went on; it will
     still stop processing properly.
+
+14. DBNull to String error. This was caused by a database that was in Offline, AutoClosed, but did
+    not have Auto_Close enabled. It could only be fixed by taking it back online, disabling auto
+    close (even though it was already off), and setting it back offline again. I believe the issue
+    stems from an incorrect status bit field in sys.databases.
+
+15. PK_UserDefinedMessage failure doing bulk inserts. The clincher was that the return of the error
+    message showed ??? where there should have been a string. It turned out I was accidentally using
+    VarChar in my table columns instead of NVarChar.
+
+16. Silent failures. It turns out Invoke-Parallel swallows exceptions and verbose output!
+
+17. A constraint error when defining constraints. This was caused by jobs with quotations in their
+    names, which are doubled up like ''. This likely comes from the Urn which has the exact same
+    behaviour (because it's escaping it as Xml). I added code to switch '' to ' in the property
+    value extracted from the Urn.
 
 --
 

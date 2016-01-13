@@ -65,12 +65,12 @@ function ConvertFrom-DataType {
             [Microsoft.SqlServer.Management.Smo.SqlDataType]::Decimal
         }
         "String" {
-            [Microsoft.SqlServer.Management.Smo.SqlDataType]::VarChar
+            [Microsoft.SqlServer.Management.Smo.SqlDataType]::NVarChar
         }
         default {
             # This basically defaults everything else so that if we passed something we really
             # didn't expect then we won't be storing a raw object; it'll be cast to string.
-            [Microsoft.SqlServer.Management.Smo.SqlDataType]::VarChar
+            [Microsoft.SqlServer.Management.Smo.SqlDataType]::NVarChar
         }  
     }  
 }

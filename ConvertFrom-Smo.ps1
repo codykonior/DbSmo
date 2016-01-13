@@ -276,6 +276,10 @@ function ConvertFrom-Smo {
 
             # This is the key itself
             $keyPropertyValue = $keyProperty.Value.Value
+            # The Xml parser does not propery decode the additional quotations; for example on a Step.JobName
+            if ($keyPropertyValue -is [string]) {
+                $keyPropertyValue = $keyPropertyValue.Replace("''", "'")
+            }
 
             if (!$table.Columns[$keyPropertyName]) {
                 $column = New-Object System.Data.DataColumn
@@ -503,7 +507,6 @@ function ConvertFrom-Smo {
         $propertyName = $property.Name
         $propertyValue = $property.Value  
         Write-Verbose "$($tab)Recursing through $propertyName collection"
-
         if ($propertyValue -is [System.Collections.ICollection]) {
             try {
                 foreach ($item in $propertyValue.GetEnumerator()) {
@@ -516,9 +519,15 @@ function ConvertFrom-Smo {
                 } elseif (Test-Error System.UnauthorizedAccessException) {
                     Write-Error "$($tab)Administrator (or other) permission required to use WMI."
                 } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
-                    Write-Error "SMO 2014 bug connecting to WMI on SQL Server 2012."
+                    Write-Error "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)."
+                } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
+                    Write-Verbose "$($tab)Unable to examine the database in detail because it's offline."
                 } elseif (Test-Error @{ Number = 954; Class = 14; State = 1 }) {
-                    Write-Verbose "$($tab)Unable to enumerate the collection, due to mirroring/AGs."
+                    Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a mirror/AG."
+                } elseif (Test-Error @{ Number = 978; Class = 14; State = 1 }) {
+                    Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a AG and has read-intent only."
+                } elseif (Test-Error @{ TargetSite = "System.String GetDbCollation(System.String)" }) {
+                    Write-Error "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline, and this error should go away."
                 } else {
                     Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
                 }

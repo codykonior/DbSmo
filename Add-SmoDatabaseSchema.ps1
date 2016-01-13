@@ -49,7 +49,7 @@ function Add-SmoDatabaseSchema {
                 $dataType = ConvertFrom-DataType $column.DataType.Name
                 Write-Verbose "Adding column $($column.ColumnName) as $dataType"
 
-                if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar") {
+                if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar" -or $dataType -eq "NVarChar") {
                     if ($column.MaxLength -ne -1) {
                         $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType, $column.MaxLength)
                     } else {
