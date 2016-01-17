@@ -397,7 +397,7 @@ function ConvertFrom-Smo {
                 if ($property.MemberType -eq "ScriptProperty") { # Used on IpAddressToString
                     $columnDataType = "System.String"
                 } else {
-                    $columnDataType = Get-SmoDataSetType $propertyType
+                    $columnDataType = ConvertFrom-DataType $propertyType
                 }
                 if (!$columnDataType) {
                     # If we don't haev the right data type, then we can't, by definition, add the column

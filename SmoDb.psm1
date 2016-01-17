@@ -79,7 +79,7 @@ Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
 
 Set-Variable -Scope Script -Option Constant -Name SmoDbPropertyExclusions -Value @("Events", "IsDesignMode", "Parent", "State", "Urn", "UserData")
 
-Set-Variable -Scope Script -Option Constant -Name SmoDataSetSimpleTypes -Value @(
+Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
 	"System.Boolean",
         "System.Byte",
         "System.Byte[]",
@@ -98,7 +98,7 @@ Set-Variable -Scope Script -Option Constant -Name SmoDataSetSimpleTypes -Value @
         "System.UInt64"
         )
 
-Set-Variable -Scope Script -Option Constant -Name SmoDataSetStringTypes -Value @(
+Set-Variable -Scope Script -Option Constant -Name DataTypeString -Value @(
 	"System.Enum",
 	"System.Timespan",
 	"System.Version"

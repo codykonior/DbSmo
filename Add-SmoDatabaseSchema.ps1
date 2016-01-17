@@ -46,7 +46,7 @@ function Add-SmoDatabaseSchema {
             # Iterate columns where the column names aren't already in the table
             $changed = $false
             foreach ($column in ($table.Columns | Where { ($newTable.Columns | Select -ExpandProperty Name) -notcontains $_.ColumnName })) {
-                $dataType = ConvertFrom-DataType $column.DataType.Name
+                $dataType = ConvertTo-SmoDataType $column.DataType.Name
                 Write-Verbose "Adding column $($column.ColumnName) as $dataType"
 
                 if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar" -or $dataType -eq "NVarChar") {

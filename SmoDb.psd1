@@ -68,7 +68,7 @@ RequiredModules = @('Error', 'Performance', 'SQLPS')
 # NestedModules = @()
 
 # Functions to export from this module
-FunctionsToExport = @("Get-SmoInformation", "Get-SmoWmi")
+FunctionsToExport = @("Add-SmoDatabaseSchema", "Get-SmoInformation", "Get-SmoWmi")
 # FunctionsToExport = '*'
 
 # Cmdlets to export from this module
