@@ -25,15 +25,14 @@ function Get-SmoInformation {
         [Parameter(Mandatory = $true)]
         $SaveDatabase,
 
-        [switch] $Smo = $true,
+        [switch] $Smo = $false,
         $SmoSchemaName = "smo",
         [switch] $Wmi = $false,
         $WmiSchemaName = "wmi"
     )
 
     $performance = @{}
-    $startDate = Get-Date
-    Write-Verbose "Started $ServerInstance at $startDate"
+    Write-Verbose "Started $ServerInstance"
 
     $smoObjects = @()
     if ($Smo) {
@@ -44,8 +43,11 @@ function Get-SmoInformation {
     }
 
     foreach ($smoObject in $smoObjects) {
+        $performanceSchema = Get-Date
+
         $schemaName = $smoObject.SchemaName
-        $dataSet = ConvertFrom-Smo $smoObject.Value
+        $dataSet = ConvertFrom-Smo $smoObject.Value -EntryDate (Get-Date)
+
         try {
             $dataSet.EnforceConstraints = $true
         } catch {
@@ -88,8 +90,8 @@ function Get-SmoInformation {
 
         $endDate = Get-Date
         Write-Verbose "Finished $ServerInstance at $endDate"
-        $performance.Add($ServerInstance, $endDate - $startDate)
+        "($ServerInstance Schema $schemaName)" | Add-PerformanceRecord $performanceSchema
     }
 
-    $performance
+    Get-PerformanceRecord | Sort Value -Descending | Out-String | Write-Verbose
 }

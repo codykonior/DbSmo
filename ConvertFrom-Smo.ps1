@@ -79,10 +79,11 @@ function ConvertFrom-Smo {
         # If there's no Urn property on the object we received, these "prior" properties are used to construct a path for 
         # a) checking against exclusions and indirectly 
         # b) the table name
-        [string] $ParentPath,
-        [string] $ParentPropertyName,
+        [string] $SubstitutePath,
         $ParentPrimaryKeyColumns,
-        $MaxDepth = 10
+        $MaxDepth = 10,
+        [Parameter(Mandatory = $true)]
+        $EntryDate
     )
 
     if ($OutputObject -eq $null) {
@@ -102,12 +103,8 @@ function ConvertFrom-Smo {
     # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
     # its own Urn so in those cases we can fall back to the parent path plus property name.
     if (!$InputObject.psobject.Properties["Urn"]) {
-        if ($ParentPath -and $ParentPropertyName) {
-            $path = "$path/$ParentPropertyName"
-            Write-Verbose "$($tab)Working on prior $path"
-        } else {
-            Write-Error "$($tab)No Urn, and no parent details, this shouldn't have happened"
-        }
+        $path = $SubstitutePath
+        Write-Verbose "$($tab)Working on substitute path of $path"
     } else {
         $urn = $InputObject.Urn
         $path = $urn.XPathExpression.ExpressionSkeleton
@@ -130,6 +127,11 @@ function ConvertFrom-Smo {
     # These only rename TABLES, not PROPERTIES.
     $performancePath = Get-Date
     switch ($path) {
+        "Server/Configuration" {
+            $tableName = "ServerConfiguration"
+            break
+        }
+
         # Rename for readability
         "Server/Mail/ConfigurationValue" {
             $tableName = "MailConfigurationValue"
@@ -153,6 +155,20 @@ function ConvertFrom-Smo {
             $tableName = "LinkedServerLogin" # Server/Login goes under just Login
             break
         }
+
+        "Server/Database/Certificate" {
+            $tableName = "DatabaseCertificate"
+            break
+        }
+        "Server/Database/SymmetricKey" {
+            $tableName = "DatabaseSymmetricKey"
+            break
+        }
+        "Server/Database/DefaultFullTextLanguage" {
+            $tableName = "DatabaseDefaultFullTextLanguage"
+            break
+        }
+
 
         # Don't use DefaultLanguage
         "Server/Database/DefaultLanguage" {
@@ -189,8 +205,12 @@ function ConvertFrom-Smo {
             $tableName = "NumaNodesCpus"
             break
         }
+        "Server/ResourceGovernor/ResourcePool/ResourcePoolAffinityInfo/Schedulers" {
+            $tableName = "ResourcePoolSchedulers" # Not a typo, a standardization
+            break
+        }
         "Server/ResourceGovernor/ResourcePool/ResourcePoolAffinityInfo/Schedulers/Cpu" {
-            $tableName = "ResourcePoolCpus" # Not a typo, a standardization
+            $tableName = "ResourcePoolSchedulersCpus" # Not a typo, a standardization
             break
         }
         "Server/ResourceGovernor/ResourcePool/ResourcePoolAffinityInfo/NumaNodes/Cpus" {
@@ -214,10 +234,102 @@ function ConvertFrom-Smo {
             break
         }
 
+        # Readability
+        "Server/JobServer/Job/Step" {
+            $tableName = "JobStep"
+            break
+        }
+        "Server/Endpoint/Payload" {
+            $tableName = "EndpointPayload"
+            break
+        }
+        "Server/Endpoint/Soap" {
+            $tableName = "EndpointSoap"
+            break
+        }
+        "Server/Endpoint/DatabaseMirroring" {
+            $tableName = "EndpointDatabaseMirroring"
+            break
+        }
+        "Server/Endpoint/Protocol" {
+            $tableName = "EndpointProtocol"
+            break
+        }
+        "Server/Endpoint/Http" {
+            $tableName = "EndpointHttp"
+            break
+        }
+        "Server/Endpoint/Tcp" {
+            $tableName = "EndpointTcp"
+            break
+        }
+        "Server/Endpoint/Tcp/ListenerIPAddress" {
+            $tableName = "EndpointListenerIPAddress"
+            break
+        }
+        
+        
+        "Server/JobServer/Schedule" {
+            $tableName = "JobServerSchedule"
+            break
+        }
+        "Server/JobServer/ProxyAccount" {
+            $tableName = "JobServerProxyAccount"
+            break
+        }
+        "Server/JobServer/AlertSystem" {
+            $tableName = "JobServerAlertSystem"
+            break
+        }
+        "Server/JobServer/JobCategory" {
+            $tableName = "JobServerJobCategory"
+            break
+        }
+        "Server/JobServer/Alert" {
+            $tableName = "JobServerAlert"
+            break
+        }
+        "Server/JobServer/Operator" {
+            $tableName = "JobServerOperator"
+            break
+        }
+        "Server/JobServer/AlertCategory" {
+            $tableName = "JobServerAlertCategory"
+            break
+        }
+        "Server/JobServer/OperatorCategory" {
+            $tableName = "JobServerOperatorCategory"
+            break
+        }
+        
+        "Server/ResourceGovernor/ResourcePool/WorkloadGroup" {
+            $tableName = "ResourcePoolWorkloadGroup"
+            break
+        }
+       
+        "ManagedComputer/Service/Dependencies" {
+            $tableName = "ServiceDependencies"
+            break
+        }
+
+        "Server/Database/FileGroup/File" {
+            $tableName = "DatabaseFile"
+            break
+        }
+        "Server/Database/LogFile" {
+            $tableName = "DatabaseLogFile"
+            break
+        }
+        "Server/Database/FileGroup" {
+            $tableName = "DatabaseFileGroup"
+            break
+        }
+
+
         default {
             # Configuration entries all follow the same pattern. We flatten them into one table.
             if ($path -like "Server/Configuration/*") {
-                $tableName = "Configuration" 
+                $tableName = "ServerConfiguration" 
             } else {
                 $tableName = $path -split "/" | Select -Last 1
             }
@@ -234,15 +346,25 @@ function ConvertFrom-Smo {
         $table = $OutputObject.Tables.Add($tableName)
     }
 
+    # We need to populate primary keys (and add the columns if necessary)
+    Write-Verbose "$($tab)Preparing primary keys"
+    $performancePrimaryKey = Get-Date
+
     # Create a row but this isn't added to the table until all properties (and sub properties) have been processed on the row.
     # But the row must be created BEFORE we calculate primary keys, so we can add the values for each key item.
     $row = $table.NewRow()
 
-    # We need to populate primary keys (and add the columns if necessary)
-    Write-Verbose "$($tab)Preparing primary keys"
-    $performancePrimaryKey = Get-Date
-    $primaryKeyColumns = @()
-    $foreignKeyColumns = @()
+    $EntryDateName = "_EntryDate"
+    if (!$table.Columns[$EntryDateName]) {
+        $column = New-Object System.Data.DataColumn
+        $column.ColumnName = $EntryDateName
+        $column.DataType = "DateTime"
+        $table.Columns.Add($column)
+    }
+
+    $row[$EntryDateName] = $EntryDate
+    $primaryKeyColumns = @($table.Columns[$EntryDateName])
+    $foreignKeyColumns = @($table.Columns[$EntryDateName])
 
     # Primary key constraints are only made on the Urn, even if it's not the most current one. We apply fixups later.
     for ($i = 0; $i -lt $urn.XPathExpression.Length; $i++) {
@@ -369,7 +491,7 @@ function ConvertFrom-Smo {
             } else {
                 Write-Debug "$($tab)Processing config property $propertyName"
 
-                $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $parentPrimaryKeyColumns
+                $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $parentPrimaryKeyColumns -EntryDate $EntryDate
                 $writeRow = $false
                 continue
                 # We don't return because we want to continue processing all of the other properties in this way.
@@ -437,7 +559,7 @@ function ConvertFrom-Smo {
     # after all of the properties have been looped above, otherwise the column won't exist yet (we could
     # create it but then we need to think of data types again, and duplicates effort).
     switch ($tableName) {
-        "Configuration" {
+        "ServerConfiguration" {
             # Because we flattened it; it doesn't have a natural key
             $primaryKeyColumns += $table.Columns["Number"]
             break
@@ -459,7 +581,11 @@ function ConvertFrom-Smo {
             break
         }
 
-        "ResourcePoolCpus" {
+        "ResourcePoolSchedulers" {
+            $primaryKeyColumns += $table.Columns["Id"]
+            break
+        }
+        "ResourcePoolSchedulersCpus" {
             # Because it doesn't have a Urn. I think that Id is the Cpu Id in both columns but it wasn't clear.
             $primaryKeyColumns += $table.Columns["Id"]
             $foreignKeyColumns += $table.Columns["Id"]
@@ -474,11 +600,6 @@ function ConvertFrom-Smo {
             $foreignKeyColumns += $table.Columns["NumaNodeId"]
             break
         }
-
-        "Schedulers" {
-            $primaryKeyColumns += $table.Columns["Id"]
-            break
-        }
     }
 
     # If there's no primary key on the table already then we'll add it
@@ -488,7 +609,7 @@ function ConvertFrom-Smo {
             [void] ($table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true))
         
             # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
-            if ($foreignKeyColumns.Count -gt 0 -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
+            if ($foreignKeyColumns.Count -gt 1 -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
                 $foreignKeyName = "FK_$($tableName)_$($ParentPrimaryKeyColumns[0].Table.TableName)"
                 Write-Verbose "$($tab)Creating foreign key $foreignKeyName"
 
@@ -506,11 +627,13 @@ function ConvertFrom-Smo {
     foreach ($property in $recurseProperties) {
         $propertyName = $property.Name
         $propertyValue = $property.Value  
-        Write-Verbose "$($tab)Recursing through $propertyName collection"
+        
         if ($propertyValue -is [System.Collections.ICollection]) {
+            Write-Verbose "$($tab)Recursing through $propertyName as a collection"
+
             try {
                 foreach ($item in $propertyValue.GetEnumerator()) {
-                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
+                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns -EntryDate $EntryDate
                 }
             } catch {
                 if (Test-Error Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException) {
@@ -532,23 +655,14 @@ function ConvertFrom-Smo {
                     Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
                 }
             }
-        } elseif ($tableName -eq "Configuration") {
-            # We have a special case for this. Because we're flattening it into one table, we need to pass
-            # the parent primary key columns, instead of our own.
-            Write-Error "$($tab)This isn't supposed to be used anymore; $(Resolve-Error -AsString)"
-        } elseif ($propertyValue -is [System.Array]) {
-            foreach ($item in $propertyValue) {
-                Write-Verbose "$($tab)Recursing through array node"
-                $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth $path $propertyName $primaryKeyColumns
-            }    
         } else {
-            Write-Verbose "$($tab)Recursing through non-array node"
-            $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth $path $propertyName $primaryKeyColumns
+            Write-Verbose "$($tab)Recursing through $propertyName as a non-collection"
+            $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns -EntryDate $EntryDate
         }
     }
     # Finished looping properties
 
-    # We set an exception not to write the row if it's part of the Configuration collection (as we write them separately)
+    # We set an exception not to write the row if it's part of the ServerConfiguration collection (as we write them separately)
     if ($writeRow) {
         Write-Verbose "$($tab)Writing row for $tableName"
         
@@ -558,10 +672,6 @@ function ConvertFrom-Smo {
             # Choke point for exceptions
             Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
         }
-    }
-
-    if ($table.Columns.Count -le $urn.XPathExpression.Length) {
-        Write-Debug "$($tab)$tableName was empty except for keys"
     }
 
     Write-Verbose "$($tab)Return"

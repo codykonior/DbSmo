@@ -56,7 +56,7 @@ function ConvertTo-SmoDataType {
             [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
         }  
         "UInt32"  {
-            [Microsoft.SqlServer.Management.Smo.SqlDataType]::Int
+            [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt # Cluster.RootMemoryReserved; ClusterNode.DrainTarget; ClusterGroup.FailoverThreshold
         }  
         "UInt64" {
             [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
