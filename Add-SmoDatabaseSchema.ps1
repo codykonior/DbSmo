@@ -43,6 +43,28 @@ function Add-SmoDatabaseSchema {
             $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
+            if ($newTable.Columns.Count -eq 0) {
+                Write-Verbose "Adding temporal fields"
+                $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
+                $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
+                $fromColumn.Nullable = $false # Columns belonging to a system-time period cannot be nullable.
+                $fromColumn.IsHidden = $true                
+                $fromColumn.GeneratedAlwaysType = "AsRowStart"
+                $newTable.Columns.Add($fromColumn)
+
+                $toColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidTo", $dataType)
+                $toColumn.Nullable = $false # Columns belonging to a system-time period cannot be nullable.
+                $toColumn.IsHidden = $true
+                $toColumn.GeneratedAlwaysType = "AsRowEnd"
+                $newTable.Columns.Add($toColumn)
+                
+                $newTable.AddPeriodForSystemTime("_ValidFrom", "_ValidTo", $true) # If you accidentally passed non strings you get a "must provide existing column" error
+
+                $newTable.HistoryTableSchema = $SchemaName
+                $newTable.HistoryTableName = "$($tableName)_History"
+                $newTable.IsSystemVersioned = $true
+            }
+
             # Iterate columns where the column names aren't already in the table
             $changed = $false
             foreach ($column in ($table.Columns | Where { ($newTable.Columns | Select -ExpandProperty Name) -notcontains $_.ColumnName })) {
@@ -81,6 +103,34 @@ function Add-SmoDatabaseSchema {
             }
             $tables.Add($tableName, $newTable)
 
+            # If the SMO table has a primary key but the new/existing table doesn't
+            if ($table.PrimaryKey) {
+                if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
+                    $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
+                    Write-Verbose "Adding primary key $primaryKeyName"
+
+                    $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
+                    $primaryKey.IndexType = [Microsoft.SqlServer.Management.Smo.IndexType]::ClusteredIndex
+                    $primaryKey.IndexKeyType = [Microsoft.SqlServer.Management.Smo.IndexKeyType]::DriPrimaryKey
+
+                    foreach ($column in $table.PrimaryKey) {
+                        $indexColumn = New-Object Microsoft.SqlServer.Management.Smo.IndexedColumn($primaryKey, $column.ColumnName)
+                        $primaryKey.IndexedColumns.Add($indexColumn)
+                    }
+
+                    $newTable.Indexes.Add($primaryKey)
+<#        
+                    if ($Script) {
+                        $scriptText += $primaryKey.Script()
+                    } else {
+                        $primaryKey.Create()
+                    }
+#>
+                }
+            } else {
+                Write-Verbose "Warning: $tableName doesn't have a primary key!"
+            }
+
             if ($changed) {
                 # You must script out the table, the primary key, and the foreign keys separately
                 if ($Script) {
@@ -96,32 +146,8 @@ function Add-SmoDatabaseSchema {
                     }
                 }
             }
-
-            # If the SMO table has a primary key but the new/existing table doesn't
-            if ($table.PrimaryKey) {
-                if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
-                    $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
-                    Write-Verbose "Adding primary key $primaryKeyName"
-
-                    $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
-                    $primaryKey.IndexType = [Microsoft.SqlServer.Management.Smo.IndexType]::ClusteredIndex
-                    $primaryKey.IndexKeyType = [Microsoft.SqlServer.Management.Smo.IndexKeyType]::DriPrimaryKey
-
-                    foreach ($column in $table.PrimaryKey) {
-                        $indexColumn = New-Object Microsoft.SqlServer.Management.Smo.IndexedColumn($primaryKey, $column.ColumnName)
-                        $primaryKey.IndexedColumns.Add($indexColumn)
-                    }
-        
-                    if ($Script) {
-                        $scriptText += $primaryKey.Script()
-                    } else {
-                        $primaryKey.Create()
-                    }
-                }
-            } else {
-                Write-Verbose "Warning: $tableName doesn't have a primary key!"
-            }
         } catch {
+            Resolve-Error -AsString
             Write-Error $_
         }
     }

@@ -12,61 +12,6 @@
 
 .EXAMPLE
 
-Clear
-Import-Module SmoDb -Force
-$global:PerformanceRecord.Clear()
-try {
-    Get-SmoInformation . . Ops -Verbose
-} catch {
-    $_
-} finally {
-    $totalTime = [timespan] 0
-    $global:PerformanceRecord.GetEnumerator() | %{
-        New-Object PSObject -Property @{
-            Name = $_.Key
-            Time = $_.Value
-        }
-
-        if ($_.Key -ne "(Properties)") {
-            $totalTime += $_.Value
-        }
-    } | Sort Time -Descending | Select -First 20
-    "Total: $totalTime"
-}
-
-# List table counts for an entry
-Select 'Select ''' + t.name + ''', Count(*) From [smo].[' + t.name + '] Where [ServerName] = ''.'' Union'
-From sys.tables t 
-Where t.schema_id = schema_id('smo')
-And t.name <> 'Server'
-
-# Before property changes
-Time                                                                                                             Name                                                                                                           
-----                                                                                                             ----                                                                                                           
-00:03:44.3505009                                                                                                 (Properties)                                                                                                   
-00:02:30.7703572                                                                                                 (Performance Exclude)                                                                                          
-00:00:40.1752434                                                                                                 Server/Database/User                                                                                           
-00:00:38.3434462                                                                                                 Server/Database                                                                                                
-00:00:34.1532836                                                                                                 Server/JobServer/Job                                                                                           
-00:00:27.9140960                                                                                                 Server/Database/Role                                                                                           
-00:00:14.8561602                                                                                                 Server/JobServer/Job/Step                                                                                      
-00:00:08.7475801                                                                                                 Server/Database/FileGroup/File                                                                                 
-00:00:08.4006632                                                                                                 Server/Login                                                                                                   
-00:00:07.9526840                                                                                                 (Primary Key)                                                                                                  
-00:00:06.2613902                                                                                                 Server/Configuration                                                                                           
-00:00:06.1923840                                                                                                 Server/Database/LogFile                                                                                        
-00:00:05.0444243                                                                                                 Server/Database/User/DefaultLanguage                                                                           
-00:00:04.1152959                                                                                                 Server/JobServer/Schedule                                                                                      
-00:00:03.4534178                                                                                                 Server/Database/FileGroup                                                                                      
-00:00:03.3072249                                                                                                 Server/JobServer/Job/Schedule                                                                                  
-00:00:02.5111564                                                                                                 Server                                                                                                         
-00:00:02.2771550                                                                                                 Server/JobServer/Alert                                                                                         
-00:00:01.3910679                                                                                                 Server/JobServer/JobCategory                                                                                   
-00:00:01.3640968                                                                                                 Server/Setting/OleDbProviderSetting                                                                            
-Total: 00:06:25.2358860
-
-
-
 #>
 
 function ConvertFrom-Smo {
@@ -81,9 +26,7 @@ function ConvertFrom-Smo {
         # b) the table name
         [string] $SubstitutePath,
         $ParentPrimaryKeyColumns,
-        $MaxDepth = 10,
-        [Parameter(Mandatory = $true)]
-        $EntryDate
+        $MaxDepth = 10
     )
 
     if ($OutputObject -eq $null) {
@@ -354,17 +297,8 @@ function ConvertFrom-Smo {
     # But the row must be created BEFORE we calculate primary keys, so we can add the values for each key item.
     $row = $table.NewRow()
 
-    $EntryDateName = "_EntryDate"
-    if (!$table.Columns[$EntryDateName]) {
-        $column = New-Object System.Data.DataColumn
-        $column.ColumnName = $EntryDateName
-        $column.DataType = "DateTime"
-        $table.Columns.Add($column)
-    }
-
-    $row[$EntryDateName] = $EntryDate
-    $primaryKeyColumns = @($table.Columns[$EntryDateName])
-    $foreignKeyColumns = @($table.Columns[$EntryDateName])
+    $primaryKeyColumns = @()
+    $foreignKeyColumns = @()
 
     # Primary key constraints are only made on the Urn, even if it's not the most current one. We apply fixups later.
     for ($i = 0; $i -lt $urn.XPathExpression.Length; $i++) {
@@ -443,26 +377,6 @@ function ConvertFrom-Smo {
     "(Performance Exclude)" | Add-PerformanceRecord $performanceExclude
     # Write-Debug "$($tab)Properties $($properties | Select -ExpandProperty Name)"
 
-    <#
-    # SMO throws an exception when it automatically creates some objects in collections, like Certificates, 
-    # and you try to iterate through them without populating them first.
-    # Examples:
-    # [Microsoft.SqlServer.Management.Smo.DatabaseEncryptionKey]
-    # [Microsoft.SqlServer.Management.Smo.EndpointPayload]
-    # [Microsoft.SqlServer.Management.Smo.EndpointProtocol]
-    # $smo.Endpoints[0].Protocol.Http # To accomplish this action, set property AuthenticationRealm.
-    #
-    # But:
-    # a) I've removed State from the properties collection so this is never triggered
-    # b) It doesn't trigger if you access the bits and peices; it triggers when you access the
-    #    Properties collection (and stuff like that), which we never do. So this is now safe
-    #    to proceed without this test.
-    if ($properties | Where { $_.Name -eq "State" -and $_.Value -eq "Creating" }) {
-        Write-Verbose "$($tab)Skipping row in $path because it does not have existing records"
-        return
-    }
-    #>
-
     $writeRow = $true
     $recurseProperties = @()
     foreach ($property in $properties) {
@@ -490,8 +404,8 @@ function ConvertFrom-Smo {
                 continue
             } else {
                 Write-Debug "$($tab)Processing config property $propertyName"
-
-                $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $parentPrimaryKeyColumns -EntryDate $EntryDate
+                
+                $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $parentPrimaryKeyColumns
                 $writeRow = $false
                 continue
                 # We don't return because we want to continue processing all of the other properties in this way.
@@ -609,7 +523,7 @@ function ConvertFrom-Smo {
             [void] ($table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true))
         
             # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
-            if ($foreignKeyColumns.Count -gt 1 -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
+            if ($foreignKeyColumns -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
                 $foreignKeyName = "FK_$($tableName)_$($ParentPrimaryKeyColumns[0].Table.TableName)"
                 Write-Verbose "$($tab)Creating foreign key $foreignKeyName"
 
@@ -633,12 +547,12 @@ function ConvertFrom-Smo {
 
             try {
                 foreach ($item in $propertyValue.GetEnumerator()) {
-                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns -EntryDate $EntryDate
+                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns
                 }
             } catch {
                 if (Test-Error Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException) {
                     # e.g. Availability Groups on lower versions of SQL Server
-                    Write-Verbose "$($tab)Collection not valid on this version."
+                    Write-Verbose "$($tab)Property collection not valid on this version."
                 } elseif (Test-Error System.UnauthorizedAccessException) {
                     Write-Error "$($tab)Administrator (or other) permission required to use WMI."
                 } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
@@ -657,7 +571,7 @@ function ConvertFrom-Smo {
             }
         } else {
             Write-Verbose "$($tab)Recursing through $propertyName as a non-collection"
-            $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns -EntryDate $EntryDate
+            $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns
         }
     }
     # Finished looping properties

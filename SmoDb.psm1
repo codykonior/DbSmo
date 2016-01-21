@@ -18,8 +18,7 @@ foreach ($fileName in (Get-ChildItem $PSScriptRoot "*.ps1" -Recurse)) {
 
 Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
         # Current connection settings
-        "ManagedComputer/ConnectionSettings", # Wmi
-        "Server/ConnectionContext", # Smo
+        "ManagedComputer/ConnectionSettings", # Wmi only
         "Server/Database/ActiveConnections",
         "Server/Database/DboLogin",
         "Server/Database/DefaultSchema",
@@ -77,7 +76,8 @@ Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
         # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't. 
     )
 
-Set-Variable -Scope Script -Option Constant -Name SmoDbPropertyExclusions -Value @("Events", "IsDesignMode", "Parent", "State", "Urn", "UserData")
+Set-Variable -Scope Script -Option Constant -Name SmoDbPropertyExclusions -Value @("ConnectionContext", "ExecutionManager", "Events", "IsDesignMode", "Parent", "State", "Urn", "UserData")
+    # ConnectionContext was in 2014; ExecutionManager is another wrapper in 2016
 
 Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
 	"System.Boolean",

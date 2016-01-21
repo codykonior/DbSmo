@@ -46,7 +46,7 @@ function Get-SmoInformation {
         $performanceSchema = Get-Date
 
         $schemaName = $smoObject.SchemaName
-        $dataSet = ConvertFrom-Smo $smoObject.Value -EntryDate (Get-Date)
+        $dataSet = ConvertFrom-Smo $smoObject.Value
 
         try {
             $dataSet.EnforceConstraints = $true
