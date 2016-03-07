@@ -46,6 +46,9 @@ function Get-SmoInformation {
         if (!$SchemaName) {
             $SchemaName = "smo"
         }
+
+        $object.SetDefaultInitFields($true)
+        $object.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.DataFile], $false)
     } elseif ($Wmi) {
         $object = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($ServerInstance)
         if (!$SchemaName) {
@@ -127,7 +130,8 @@ function Get-SmoInformation {
         }
     } catch {
         $bulkCopyTransaction.Rollback()
-        Write-Error "Exception: $_"
+        Resolve-Error -AsString
+	Write-Error "Exception: $_"
     } finally {
         if ($bulkCopyTransaction.Connection -ne $null) {
             $bulkCopyTransaction.Commit()
@@ -140,3 +144,4 @@ function Get-SmoInformation {
 
     Get-PerformanceRecord | Sort Value -Descending | Out-String | Write-Verbose
 }
+

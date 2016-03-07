@@ -169,7 +169,8 @@ function Add-SmoDatabaseSchema {
                     $foreignKeyColumn = New-Object Microsoft.SqlServer.Management.Smo.ForeignKeyColumn($foreignKey, $constraint.Columns[$i], $constraint.RelatedColumns[$i])
                     $foreignKey.Columns.Add($foreignKeyColumn)
                 }
-                $foreignKey.DeleteAction = "Cascade"
+		# Broken in SQL 2016 by temporal tables
+                # $foreignKey.DeleteAction = "Cascade"
 
                 if ($Script) {
                     $scriptText += $foreignKey.Script()

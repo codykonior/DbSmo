@@ -40,7 +40,7 @@ function ConvertFrom-Smo {
     # Do a depth check. If this triggered it would mean we did something really wrong because everything should be
     # accessible within the depth I've selected.
     if ($Depth -gt $maxDepth) {
-        Write-Error "$($tab)Max depth exceeded, this shouldn't have happened..."
+        Write-Error "$($tab)Max depth exceeded, this shouldn't have happened... $(Resolve-Error -AsString)"
     }
 
     # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
@@ -268,6 +268,31 @@ function ConvertFrom-Smo {
             break
         }
 
+        # Enum methods
+        "Server/Database/User/EnumRoles" {
+            $tableName = "UserRole"
+            break
+        }
+        "Server/Database/User/EnumObjectPermissions" {
+            $tableName = "UserPermission"
+            break
+        }
+        "Server/Database/User/EnumObjectPermissions/PermissionType" { # Child of above
+            $tableName = "UserPermissionType"
+            break
+        }
+        "Server/Role/EnumMemberNames" { # EnumServerRoleMembers is deprecated
+            $tableName = "ServerRoleMember"
+            break
+        }
+        "Server/Role/EnumObjectPermissions" {
+            $tableName = "ServerRolePermission"
+            break
+        }
+        "Server/Login/EnumObjectPermissions" {
+            $tableName = "LoginPermission"
+            break
+        }
 
         default {
             # Configuration entries all follow the same pattern. We flatten them into one table.
@@ -305,7 +330,7 @@ function ConvertFrom-Smo {
         $key = $urn.XPathExpression.Item($i)
 
         # Iterate through each part of the URN; e.g. the Server part, the Database part, the User part.
-        foreach ($keyProperty in $key.FixedProperties.GetEnumerator()) {            
+        foreach ($keyProperty in $key.FixedProperties.GetEnumerator()) {
             if ($i -eq ($urn.XPathExpression.Length - 1) -and $InputObject.psobject.Properties["Urn"]) {
                 # If we are on the last part of the Urn, and the current row has a Urn, we use the proper name
                 # (because this last name is the one that will be used on the current row as a property already)
@@ -360,7 +385,7 @@ function ConvertFrom-Smo {
             }
 
             if ($keyPropertyValue -eq $null) {
-                Write-Error "$($tab)Null value in primary key, this shouldn't happen"
+                Write-Error "$($tab)Null value in primary key, this shouldn't happen $(Resolve-Error -AsString)"
             } else {
                 $row[$keyPropertyName] = $keyPropertyValue
             }
@@ -379,6 +404,24 @@ function ConvertFrom-Smo {
 
     $writeRow = $true
     $recurseProperties = @()
+
+    <#
+    # Make sure never to remove the Enum* part or we'd be calling random methods!
+    $InputObject.psobject.Methods | Where { $_.Name -Like "Enum*" } | %{
+        if ($path -eq "Server/Database/User" -and @("EnumRoles", "EnumObjectPermissions") -contains $_.Name) {
+            $recurseProperties += $_
+        }
+
+        if ($path -eq "Server/Login" -and @("EnumObjectPermissions") -contains $_.Name) {
+            $recurseProperties += $_
+        }
+
+        if ($path -eq "Server/Role" -and @("EnumMemberNames", "EnumObjectPermissions") -contains $_.Name) {
+            $recurseProperties += $_
+        }
+    }
+    #>
+
     foreach ($property in $properties) {
         $propertyName = $property.Name
         $propertyType = $property.TypeNameOfValue
@@ -539,10 +582,20 @@ function ConvertFrom-Smo {
 
     # Part 2 is where we go through and start recursing things
     foreach ($property in $recurseProperties) {
+        $propertyType = $property.MemberType
         $propertyName = $property.Name
-        $propertyValue = $property.Value  
+        $propertyValue = $property.Value
         
-        if ($propertyValue -is [System.Collections.ICollection]) {
+        if ($propertyType -eq "Method") {
+<#            # For additional safety, make sure it enumerates something
+            if ($propertyName -like "Enum*") {
+                Write-Verbose "$($tab)Processing $propertyName as a method"
+                foreach ($item in $propertyValue.Invoke()) {
+                    $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns
+                }
+            }
+            #>
+        } elseif ($propertyValue -is [System.Collections.ICollection]) {
             Write-Verbose "$($tab)Recursing through $propertyName as a collection"
 
             try {
@@ -554,17 +607,21 @@ function ConvertFrom-Smo {
                     # e.g. Availability Groups on lower versions of SQL Server
                     Write-Verbose "$($tab)Property collection not valid on this version."
                 } elseif (Test-Error System.UnauthorizedAccessException) {
-                    Write-Error "$($tab)Administrator (or other) permission required to use WMI."
+                    Write-Error "$($tab)Administrator (or other) permission required to use WMI. $(Resolve-Error -AsString)"
                 } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
-                    Write-Error "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)."
+                    Write-Error "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO). $(Resolve-Error -AsString)"
+                } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
+                    Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
                 } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's offline."
                 } elseif (Test-Error @{ Number = 954; Class = 14; State = 1 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a mirror/AG."
                 } elseif (Test-Error @{ Number = 978; Class = 14; State = 1 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a AG and has read-intent only."
+                } elseif (Test-Error @{ Number = 3906; Class = 16; State = 1 }) {
+                    Write-Verbose "$($tab)Unable to examine this item in detail because the database is read only (often Full-Text catalogs on a secondary in a mirror/AG)."
                 } elseif (Test-Error @{ TargetSite = "System.String GetDbCollation(System.String)" }) {
-                    Write-Error "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline, and this error should go away."
+                    Write-Verbose "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline. Sometimes the error remains though."
                 } else {
                     Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
                 }
