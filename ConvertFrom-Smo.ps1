@@ -40,7 +40,7 @@ function ConvertFrom-Smo {
     # Do a depth check. If this triggered it would mean we did something really wrong because everything should be
     # accessible within the depth I've selected.
     if ($Depth -gt $maxDepth) {
-        Write-Error "$($tab)Max depth exceeded, this shouldn't have happened... $(Resolve-Error -AsString)"
+        Write-Error "Max depth exceeded, this shouldn't have happened..."
     }
 
     # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
@@ -385,7 +385,7 @@ function ConvertFrom-Smo {
             }
 
             if ($keyPropertyValue -eq $null) {
-                Write-Error "$($tab)Null value in primary key, this shouldn't happen $(Resolve-Error -AsString)"
+                Write-Error "Null value in primary key, this shouldn't happen"
             } else {
                 $row[$keyPropertyName] = $keyPropertyValue
             }
@@ -576,7 +576,7 @@ function ConvertFrom-Smo {
         }
     } catch {
         # Choke point for exceptions
-        Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
+        throw
     }
     "(Constraints)" | Add-PerformanceRecord $performanceConstraints
 
@@ -607,13 +607,15 @@ function ConvertFrom-Smo {
                     # e.g. Availability Groups on lower versions of SQL Server
                     Write-Verbose "$($tab)Property collection not valid on this version."
                 } elseif (Test-Error System.UnauthorizedAccessException) {
-                    Write-Error "$($tab)Administrator (or other) permission required to use WMI. $(Resolve-Error -AsString)"
+                    throw (New-Object System.Exception "Administrator (or other) permission required to use WMI.", $_.Exception)
                 } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
-                    Write-Error "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO). $(Resolve-Error -AsString)"
+                    throw (New-Object System.Exception "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO).", $_.Exception)
                 } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
                 } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's offline."
+                } elseif (Test-Error @{ Number = 945; Class = 14; State = 2 }) {
+                    Write-Verbose "$($tab)Unable to examine the database in detail probably because it's part of a mirror/AG and restoring."
                 } elseif (Test-Error @{ Number = 954; Class = 14; State = 1 }) {
                     Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a mirror/AG."
                 } elseif (Test-Error @{ Number = 978; Class = 14; State = 1 }) {
@@ -623,7 +625,7 @@ function ConvertFrom-Smo {
                 } elseif (Test-Error @{ TargetSite = "System.String GetDbCollation(System.String)" }) {
                     Write-Verbose "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline. Sometimes the error remains though."
                 } else {
-                    Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
+                    throw
                 }
             }
         } else {
@@ -641,7 +643,7 @@ function ConvertFrom-Smo {
             $table.Rows.Add($row)
         } catch {
             # Choke point for exceptions
-            Write-Error "$($tab)Exception: $(Resolve-Error -AsString)"
+            throw
         }
     }
 
