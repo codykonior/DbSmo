@@ -35,16 +35,32 @@ function Add-SmoDatabaseSchema {
     $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
     $sqlDatabase = $sqlServer.Databases[$databaseName]
 
+    $newSchema = New-Object Microsoft.SqlServer.Management.Smo.Schema($sqlDatabase, $schemaName)
+    $newSchema.Refresh()
+    if ($Script) {
+        Write-Log Trace $ServerInstance "Schema scripted"
+        $scriptText += $newSchema.Script()
+    } else {
+        if ($newSchema.State -eq "Existing") {
+            Write-Log Trace $ServerInstance "Schema altered"
+            $newSchema.Alter()
+        } else {
+            Write-Log Trace $ServerInstance "Schema created"
+            $newSchema.Create()
+        }
+    }
+
     $tables = @{}
     foreach ($table in $DataSet.Tables) {
         try {
             $tableName = $table.TableName
-            Write-Verbose "Converting table $tableName"
+            Write-Log Trace $ServerInstance "Converting table $tableName"
             $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
-            if ($newTable.Columns.Count -eq 0) {
-                Write-Verbose "Adding temporal fields"
+            # Add temporal table columns if this is SQL 2016 onwards
+            if ($newTable.Columns.Count -eq 0 -and $sqlConnection.ServerVersion.Major -ge 13) {
+                Write-Log Trace $ServerInstance "Adding temporal fields"
                 $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
                 $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
                 $fromColumn.Nullable = $false # Columns belonging to a system-time period cannot be nullable.
@@ -69,7 +85,7 @@ function Add-SmoDatabaseSchema {
             $changed = $false
             foreach ($column in ($table.Columns | Where { ($newTable.Columns | Select -ExpandProperty Name) -notcontains $_.ColumnName })) {
                 $dataType = ConvertTo-SmoDataType $column.DataType.Name
-                Write-Verbose "Adding column $($column.ColumnName) as $dataType"
+                Write-Log Trace $ServerInstance "Adding column $($column.ColumnName) as $dataType"
 
                 if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar" -or $dataType -eq "NVarChar") {
                     if ($column.MaxLength -ne -1) {
@@ -107,7 +123,7 @@ function Add-SmoDatabaseSchema {
             if ($table.PrimaryKey) {
                 if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
                     $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
-                    Write-Verbose "Adding primary key $primaryKeyName"
+                    Write-Log Trace $ServerInstance "Adding primary key $primaryKeyName"
 
                     $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
                     $primaryKey.IndexType = [Microsoft.SqlServer.Management.Smo.IndexType]::ClusteredIndex
@@ -119,36 +135,28 @@ function Add-SmoDatabaseSchema {
                     }
 
                     $newTable.Indexes.Add($primaryKey)
-<#        
-                    if ($Script) {
-                        $scriptText += $primaryKey.Script()
-                    } else {
-                        $primaryKey.Create()
-                    }
-#>
                 }
             } else {
-                Write-Verbose "Warning: $tableName doesn't have a primary key!"
+                Write-Log Warn $ServerInstance "$tableName doesn't have a primary key!"
             }
 
             if ($changed) {
                 # You must script out the table, the primary key, and the foreign keys separately
                 if ($Script) {
-                    Write-Verbose "Table Scripted"
+                    Write-Log Trace $ServerInstance "Table scripted"
                     $scriptText += $newTable.Script()
                 } else {
                     if ($newTable.State -eq "Existing") {
-                        Write-Verbose "Table Altered"
+                        Write-Log Trace $ServerInstance "Table altered"
                         $newTable.Alter()
                     } else {
-                        Write-Verbose "Table Created"
+                        Write-Log Trace $ServerInstance "Table created"
                         $newTable.Create()
                     }
                 }
             }
         } catch {
-            Resolve-Error -AsString
-            Write-Error $_
+            Write-Log Error $ServerInstance "" $_
         }
     }
 
@@ -160,7 +168,7 @@ function Add-SmoDatabaseSchema {
         foreach ($constraint in ($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint] -and ($newTable.ForeignKeys | Select -ExpandProperty Name) -notcontains $_.ConstraintName })) {
             try {
                 $constraintName = $constraint.ConstraintName
-                Write-Verbose "Adding foreign key $($tableName).$constraintName"
+                Write-Log Trace $ServerInstance "Adding foreign key $($tableName).$constraintName"
 
                 $foreignKey = New-Object Microsoft.SqlServer.Management.Smo.ForeignKey($tables[$tableName], $constraintName)
                 $foreignKey.ReferencedTable = $constraint.RelatedTable.TableName
@@ -169,8 +177,6 @@ function Add-SmoDatabaseSchema {
                     $foreignKeyColumn = New-Object Microsoft.SqlServer.Management.Smo.ForeignKeyColumn($foreignKey, $constraint.Columns[$i], $constraint.RelatedColumns[$i])
                     $foreignKey.Columns.Add($foreignKeyColumn)
                 }
-		# Broken in SQL 2016 by temporal tables
-                # $foreignKey.DeleteAction = "Cascade"
 
                 if ($Script) {
                     $scriptText += $foreignKey.Script()
@@ -178,7 +184,7 @@ function Add-SmoDatabaseSchema {
                     $foreignKey.Create()
                 }
             } catch {
-                Write-Error $_
+                Write-Log Error $ServerInstance "" $_
             }
         }
     }

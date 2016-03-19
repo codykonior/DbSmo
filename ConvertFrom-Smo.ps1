@@ -40,18 +40,18 @@ function ConvertFrom-Smo {
     # Do a depth check. If this triggered it would mean we did something really wrong because everything should be
     # accessible within the depth I've selected.
     if ($Depth -gt $maxDepth) {
-        Write-Error "Max depth exceeded, this shouldn't have happened..."
+        Write-Log Error $ServerInstance "Max depth exceeded, this shouldn't have happened..."
     }
 
     # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
     # its own Urn so in those cases we can fall back to the parent path plus property name.
     if (!$InputObject.psobject.Properties["Urn"]) {
         $path = $SubstitutePath
-        Write-Verbose "$($tab)Working on substitute path of $path"
+        Write-Log Trace $ServerInstance "$($tab)Working on substitute path of $path"
     } else {
         $urn = $InputObject.Urn
         $path = $urn.XPathExpression.ExpressionSkeleton
-        Write-Verbose "$($tab)Working on $urn, the skeleton path is $path"
+        Write-Log Trace $ServerInstance "$($tab)Working on $urn, the skeleton path is $path"
     }
 
     # These are table renames for conflicts and readability. I don't think it will work if you renamed 
@@ -307,15 +307,15 @@ function ConvertFrom-Smo {
 
     # We can pull out the existing table or create a new one
     if ($OutputObject.Tables[$tableName]) {
-        Write-Verbose "$($tab)Retrieving table $tableName"
+        Write-Log Trace $ServerInstance "$($tab)Retrieving table $tableName"
         $table = $OutputObject.Tables[$tableName]
     } else {
-        Write-Verbose "$($tab)Adding table $tableName"
+        Write-Log Trace $ServerInstance "$($tab)Adding table $tableName"
         $table = $OutputObject.Tables.Add($tableName)
     }
 
     # We need to populate primary keys (and add the columns if necessary)
-    Write-Verbose "$($tab)Preparing primary keys"
+    Write-Log Trace $ServerInstance "$($tab)Preparing primary keys"
     $performancePrimaryKey = Get-Date
 
     # Create a row but this isn't added to the table until all properties (and sub properties) have been processed on the row.
@@ -373,9 +373,9 @@ function ConvertFrom-Smo {
                 }
                 $table.Columns.Add($column)
 
-                Write-Verbose "$($tab)Key $keyPropertyName added"
+                Write-Log Trace $ServerInstance "$($tab)Key $keyPropertyName added"
             } else {
-                Write-Verbose "$($tab)Key $keyPropertyName already exists"
+                Write-Log Trace $ServerInstance "$($tab)Key $keyPropertyName already exists"
             }
             $primaryKeyColumns += $table.Columns[$keyPropertyName]
 
@@ -385,7 +385,7 @@ function ConvertFrom-Smo {
             }
 
             if ($keyPropertyValue -eq $null) {
-                Write-Error "Null value in primary key, this shouldn't happen"
+                Write-Log Error $ServerInstance "Null value in primary key, this shouldn't happen"
             } else {
                 $row[$keyPropertyName] = $keyPropertyValue
             }
@@ -498,7 +498,7 @@ function ConvertFrom-Smo {
             # maybe sure to check -(n)e(q) $null because $propertyValue could be a boolean, and false's would then not be
             # written out.
             if ($propertyValue -ne $null) {
-                Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
+                Write-Log Trace $ServerInstance "$($tab)Processing property $propertyName with value $propertyValue"
     
 	        	# This is how SMO represents null dates; a 0000 date or a 1900 date. Both are converted to null.
                 if ($propertyValue -isnot [System.DateTime] -or @(599266080000000000, 0) -notcontains $propertyValue.Ticks) {
@@ -562,13 +562,13 @@ function ConvertFrom-Smo {
     # If there's no primary key on the table already then we'll add it
     try {
         if (!$table.PrimaryKey) {
-            Write-Verbose "$($tab)Creating primary key"
+            Write-Log Trace $ServerInstance "$($tab)Creating primary key"
             [void] ($table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true))
         
             # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
             if ($foreignKeyColumns -and !($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint]})) {
                 $foreignKeyName = "FK_$($tableName)_$($ParentPrimaryKeyColumns[0].Table.TableName)"
-                Write-Verbose "$($tab)Creating foreign key $foreignKeyName"
+                Write-Log Trace $ServerInstance "$($tab)Creating foreign key $foreignKeyName"
 
                 $foreignKeyConstraint = New-Object System.Data.ForeignKeyConstraint($foreignKeyName, $ParentPrimaryKeyColumns, $foreignKeyColumns)
                 [void] ($table.Constraints.Add($foreignKeyConstraint))
@@ -576,7 +576,7 @@ function ConvertFrom-Smo {
         }
     } catch {
         # Choke point for exceptions
-        throw
+        Write-Log Error $ServerInstance "" $_
     }
     "(Constraints)" | Add-PerformanceRecord $performanceConstraints
 
@@ -589,14 +589,14 @@ function ConvertFrom-Smo {
         if ($propertyType -eq "Method") {
 <#            # For additional safety, make sure it enumerates something
             if ($propertyName -like "Enum*") {
-                Write-Verbose "$($tab)Processing $propertyName as a method"
+                Write-Log Trace $ServerInstance "$($tab)Processing $propertyName as a method"
                 foreach ($item in $propertyValue.Invoke()) {
                     $OutputObject = ConvertFrom-Smo $item $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns
                 }
             }
             #>
         } elseif ($propertyValue -is [System.Collections.ICollection]) {
-            Write-Verbose "$($tab)Recursing through $propertyName as a collection"
+            Write-Log Trace $ServerInstance "$($tab)Recursing through $propertyName as a collection"
 
             try {
                 foreach ($item in $propertyValue.GetEnumerator()) {
@@ -605,31 +605,31 @@ function ConvertFrom-Smo {
             } catch {
                 if (Test-Error Microsoft.SqlServer.Management.Sdk.Sfc.InvalidVersionEnumeratorException) {
                     # e.g. Availability Groups on lower versions of SQL Server
-                    Write-Verbose "$($tab)Property collection not valid on this version."
+                    Write-Log Trace $ServerInstance "$($tab)Property collection not valid on this version."
                 } elseif (Test-Error System.UnauthorizedAccessException) {
-                    throw (New-Object System.Exception "Administrator (or other) permission required to use WMI.", $_.Exception)
+                    Write-Log Error $Serverinstance "Administrator (or other) permission required to use WMI." $_
                 } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
-                    throw (New-Object System.Exception "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO).", $_.Exception)
+                    Write-Log Error "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)." $_
                 } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
-                    Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine the database in detail because it's currently restoring."
                 } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
-                    Write-Verbose "$($tab)Unable to examine the database in detail because it's offline."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine the database in detail because it's offline."
                 } elseif (Test-Error @{ Number = 945; Class = 14; State = 2 }) {
-                    Write-Verbose "$($tab)Unable to examine the database in detail probably because it's part of a mirror/AG and restoring."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine the database in detail probably because it's part of a mirror/AG and restoring."
                 } elseif (Test-Error @{ Number = 954; Class = 14; State = 1 }) {
-                    Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a mirror/AG."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine the database in detail because it's part of a mirror/AG."
                 } elseif (Test-Error @{ Number = 978; Class = 14; State = 1 }) {
-                    Write-Verbose "$($tab)Unable to examine the database in detail because it's part of a AG and has read-intent only."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine the database in detail because it's part of a AG and has read-intent only."
                 } elseif (Test-Error @{ Number = 3906; Class = 16; State = 1 }) {
-                    Write-Verbose "$($tab)Unable to examine this item in detail because the database is read only (often Full-Text catalogs on a secondary in a mirror/AG)."
+                    Write-Log Trace $ServerInstance "$($tab)Unable to examine this item in detail because the database is read only (often Full-Text catalogs on a secondary in a mirror/AG)."
                 } elseif (Test-Error @{ TargetSite = "System.String GetDbCollation(System.String)" }) {
-                    Write-Verbose "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline. Sometimes the error remains though."
+                    Write-Log Trace $ServerInstance "$($tab)Likely a database has been set offline but believes it is configured for Auto_Close when it's not. Set the database online, re-disable Auto_Close (even if it's not set), set it back offline. Sometimes the error remains though."
                 } else {
-                    throw
+                    Write-Log Error $ServerInstance "" $_
                 }
             }
         } else {
-            Write-Verbose "$($tab)Recursing through $propertyName as a non-collection"
+            Write-Log Trace $ServerInstance "$($tab)Recursing through $propertyName as a non-collection"
             $OutputObject = ConvertFrom-Smo $propertyValue $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns
         }
     }
@@ -637,7 +637,7 @@ function ConvertFrom-Smo {
 
     # We set an exception not to write the row if it's part of the ServerConfiguration collection (as we write them separately)
     if ($writeRow) {
-        Write-Verbose "$($tab)Writing row for $tableName"
+        Write-Log Trace $ServerInstance "$($tab)Writing row for $tableName"
         
         try {
             $table.Rows.Add($row)
@@ -647,6 +647,6 @@ function ConvertFrom-Smo {
         }
     }
 
-    Write-Verbose "$($tab)Return"
+    Write-Log Trace $ServerInstance "$($tab)Return"
     $OutputObject
 }

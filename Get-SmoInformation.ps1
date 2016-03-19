@@ -38,8 +38,9 @@ function Get-SmoInformation {
         [switch] $Wmi
     )
 
-    $performance = @{}
-    Write-Verbose "Started $ServerInstance"
+    Clear-PerformanceRecord
+    $performanceTotal = Get-Date
+    Write-Log Trace $ServerInstance "Started $ServerInstance"
 
     try {
         if ($Smo) {
@@ -63,16 +64,14 @@ function Get-SmoInformation {
         try {
             $dataSet.EnforceConstraints = $true
         } catch {
-            Write-Error "Enforcing constraints failed. What follows are the tables and rows involved:" -ErrorAction:Continue
-            
-            $dataSet.Tables | %{ 
+            $failures = $dataSet.Tables | %{ 
                 if ($_.GetErrors()) { 
                     $_.TableName
                     $_.GetErrors()
                 }
-            }
-    
-            throw
+            } | Out-String
+
+            Write-Log Error $ServerInstance "Enforcing constraints failed. What follows are the tables and rows involved: $failures"
         }
 
         Add-SmoDatabaseSchema $dataSet $SaveServerInstance $SaveDatabase $SchemaName 
@@ -112,13 +111,13 @@ function Get-SmoInformation {
             $deleteParameter.Value = $object.Name
             [void] $deleteCommand.Parameters.Add($deleteParameter)
 
-            Write-Verbose "Deleting existing entry for $($object.Name)"
+            Write-Log Trace $ServerInstance "Deleting existing entry for $($object.Name)"
             [void] $deleteCommand.ExecuteNonQuery()
 
             $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($bulkCopyConnection, [System.Data.SqlClient.SqlBulkCopyOptions]::Default, $bulkCopyTransaction)
 
             foreach ($table in $dataSet.Tables) {
-                Write-Verbose "Saving $($table.TableName)"
+                Write-Log Trace $ServerInstance "Saving $($table.TableName)"
                 $bulkCopy.DestinationTableName = "[$schemaName].[$($table.TableName)]"
 
                 # Required in case we've added columns, they will not be in order, and as long as you specify the names here it will all work okay
@@ -138,12 +137,13 @@ function Get-SmoInformation {
         }
 
         $endDate = Get-Date
-        Write-Verbose "Finished $ServerInstance at $endDate"
+        Write-Log Trace $ServerInstance "Finished $ServerInstance at $endDate"
         "($ServerInstance Schema $schemaName)" | Add-PerformanceRecord $performanceSchema
+        "($ServerInstance Total)" | Add-PerformanceRecord $performanceTotal
 
-        Get-PerformanceRecord | Sort Value -Descending | Out-String | Write-Verbose
+        Get-PerformanceRecord | Sort Value -Descending | %{ Write-Log Debug $ServerInstance "Performance $($_.Name) = $($_.Value)" }
     } catch {
-        Write-Error (Resolve-Error -AsString)
+        Write-Log Error $ServerInstance "" $_
     }
 }
 
