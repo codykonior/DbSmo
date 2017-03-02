@@ -447,24 +447,24 @@ function ConvertFrom-DbSmo {
                 try {
                     $InputObject.Properties[$i] | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
                 } catch {
-                    Write-Output "Skipped a property because it gave an error, $_"
+                    Write-Verbose "Skipped a property because it gave an error, $_"
                 }
             }
-            $newProperties | ForEach { Write-Output "Specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["AdvancedProperties"] -and $InputObject.psobject.Properties["AdvancedProperties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.SqlPropertyCollection") {
             $newProperties += $InputObject.AdvancedProperties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Output "Very specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     # Wmi, these have a different Type name
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["Properties"] -and $InputObject.psobject.Properties["Properties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.PropertyCollection") {
             # I added the check for psobject properties name because the Server/Configuration is a special case below and does not have a Name property; doing it here ruins stuff
             $newProperties = $InputObject.Properties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Output "Specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["AdvancedProperties"] -and $InputObject.psobject.Properties["AdvancedProperties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.PropertyCollection") {
             $newProperties = $InputObject.AdvancedProperties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Output "Very specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
     }    
     
     "(Performance Exclude)" | Add-PerformanceRecord $performanceExclude
