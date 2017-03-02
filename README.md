@@ -11,8 +11,10 @@
     Destination database needs the destination schema (Smo) to exist,
     and for the below stored procedure:
 
+Create Procedure [dbo].[DeleteTemporal]    
     @SchemaName Sysname,    
     @TableName Sysname,
+    @ColumnName Sysname,
     @Value Sysname    
 As    
 Begin    
