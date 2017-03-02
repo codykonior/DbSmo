@@ -14,136 +14,92 @@
 
 #>
 
-function Get-SmoInformation {
+function Add-DbSmo {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, ParameterSetName = "Smo", Position = 1)]
-        [Parameter(Mandatory = $true, ParameterSetName = "Wmi", Position = 1)]
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true, ValueFromPipelineByPropertyName=$true)]
+        [Alias("Name")]
+        [string] $InputObject,
         [string] $ServerInstance,
+        [string] $Database,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "Smo", Position = 2)]
-        [Parameter(Mandatory = $true, ParameterSetName = "Wmi", Position = 2)]
-        [string] $SaveServerInstance,
-        [Parameter(Mandatory = $true, ParameterSetName = "Smo", Position = 3)]
-        [Parameter(Mandatory = $true, ParameterSetName = "Wmi", Position = 3)]
-        [string] $SaveDatabase,
-
-        [Parameter(Mandatory = $false, ParameterSetName = "Smo", Position = 4)]
-        [Parameter(Mandatory = $false, ParameterSetName = "Wmi", Position = 4)]
-        $SchemaName,
-
-        [Parameter(Mandatory = $true, ParameterSetName = "Smo")]
         [switch] $Smo,
-        [Parameter(Mandatory = $true, ParameterSetName = "Wmi")]
-        [switch] $Wmi
+        [switch] $Wmi,
+
+        [string] $JojobaBatch = [System.Guid]::NewGuid().ToString(),
+        [switch] $JojobaJenkins,
+        [int]    $JojobaThrottle = $env:NUMBER_OF_PROCESSORS
     )
 
-    Clear-PerformanceRecord
-    $performanceTotal = Get-Date
-    Write-Log Trace $ServerInstance "Started $ServerInstance"
+    begin {
+    }
 
-    try {
-        if ($Smo) {
-            $object = New-Object Microsoft.SqlServer.Management.Smo.Server($ServerInstance)
-            if (!$SchemaName) {
-                $SchemaName = "smo"
+    process {
+        Start-Jojoba {
+            if (!$Smo -and !$Wmi) {
+                throw "Neither the -Smo or -Wmi switches were used and one must be used"
             }
 
-            $object.SetDefaultInitFields($true)
-            $object.SetDefaultInitFields([Microsoft.SqlServer.Management.Smo.DataFile], $false)
-        } elseif ($Wmi) {
-            $object = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer($ServerInstance)
-            if (!$SchemaName) {
-                $SchemaName = "wmi"
-            }
-        }
+            Clear-PerformanceRecord
+            $performanceTotal = Get-Date
+            Write-Verbose "Started $InputObject"
 
-        $performanceSchema = Get-Date
-        $dataSet = ConvertFrom-Smo $object
+            $schemaName = "Smo"
 
-        try {
-            $dataSet.EnforceConstraints = $true
-        } catch {
-            $failures = $dataSet.Tables | %{ 
-                if ($_.GetErrors()) { 
-                    $_.TableName
-                    $_.GetErrors()
-                }
-            } | Out-String
-
-            Write-Log Error $ServerInstance "Enforcing constraints failed. What follows are the tables and rows involved: $failures"
-        }
-
-        Add-SmoDatabaseSchema $dataSet $SaveServerInstance $SaveDatabase $SchemaName 
-
-        $bulkCopyConnection = New-Object System.Data.SqlClient.SqlConnection("Server=$SaveServerInstance;Database=$SaveDatabase;Trusted_Connection=true")
-        $bulkCopyConnection.Open()
-        $bulkCopyTransaction = $bulkCopyConnection.BeginTransaction($ServerInstance.Substring(0, [Math]::Min($ServerInstance.Length, 32)))
-        
-        try {
-            $deleteCommand = $bulkCopyConnection.CreateCommand()
-            $deleteCommand.Transaction = $bulkCopyTransaction
-
-            <# 
-            if ($Smo) { 
-                $deleteCommand.CommandText = "Delete From $(Encode-SqlName $SchemaName).[Server] Where Name = @Name"
+            if ($Smo) {    
+                $object = Get-DbSmo $InputObject -Preload
             } elseif ($Wmi) {
-                $deleteCommand.CommandText = "Delete From $(Encode-SqlName $SchemaName).[ManagedComputer] Where Name = @Name"
+                $object = Get-DbWmi $InputObject
             }
-            $deleteParameter = $deleteCommand.CreateParameter()
-            $deleteParameter.ParameterName = "Name"
-            $deleteParameter.Value = $object.Name
-            [void] $deleteCommand.Parameters.Add($deleteParameter)
-            #>
 
-            # Temporal cascade deletes are broken so we need a workaround
-            $deleteCommand.CommandText = "Exec dbo.DeleteTemporal @SchemaName = @SchemaName, @TableName = @TableName, @Name = @Name"
-            $deleteParameter = $deleteCommand.CreateParameter()
-            $deleteParameter.ParameterName = "SchemaName"
-            $deleteParameter.Value = $SchemaName
-            [void] $deleteCommand.Parameters.Add($deleteParameter)
-            $deleteParameter = $deleteCommand.CreateParameter()
-            $deleteParameter.ParameterName = "TableName"
-            $deleteParameter.Value = $dataSet.Tables[0].TableName
-            [void] $deleteCommand.Parameters.Add($deleteParameter)
-            $deleteParameter = $deleteCommand.CreateParameter()
-            $deleteParameter.ParameterName = "Name"
-            $deleteParameter.Value = $object.Name
-            [void] $deleteCommand.Parameters.Add($deleteParameter)
+            $performanceSchema = Get-Date
+            $dataSet = ConvertFrom-DbSmo $object
 
-            Write-Log Trace $ServerInstance "Deleting existing entry for $($object.Name)"
-            [void] $deleteCommand.ExecuteNonQuery()
+            try {
+                $dataSet.EnforceConstraints = $true
+            } catch {
+                $failures = $dataSet.Tables | ForEach { 
+                    if ($_.GetErrors()) { 
+                        "Table: $($_.TableName)"
+                        "Errors:"
+                        $_.GetErrors()
+                    }
+                } | Out-String
 
-            $bulkCopy = New-Object System.Data.SqlClient.SqlBulkCopy($bulkCopyConnection, [System.Data.SqlClient.SqlBulkCopyOptions]::Default, $bulkCopyTransaction)
-
-            foreach ($table in $dataSet.Tables) {
-                Write-Log Trace $ServerInstance "Saving $($table.TableName)"
-                $bulkCopy.DestinationTableName = "[$schemaName].[$($table.TableName)]"
-
-                # Required in case we've added columns, they will not be in order, and as long as you specify the names here it will all work okay
-                $bulkCopy.ColumnMappings.Clear()
-                $table.Columns | %{ 
-                    $bulkCopy.ColumnMappings.Add((New-Object System.Data.SqlClient.SqlBulkCopyColumnMapping($_.ColumnName, $_.ColumnName))) | Out-Null
-                }
-                $bulkCopy.WriteToServer($table)
+                throw "Enforcing constraints failed. What follows are the tables and rows involved: $failures"
             }
-        } catch {
-            $bulkCopyTransaction.Rollback()
-            throw
-        } finally {
-            if ($bulkCopyTransaction.Connection -ne $null) {
-                $bulkCopyTransaction.Commit()
+
+            New-DbSmoSchema $dataSet -ServerInstance $ServerInstance -Database $Database -SchemaName $schemaName 
+
+            $dbData = New-DbConnection -ServerInstance $ServerInstance -Database $Database | New-DbCommand "Exec dbo.DeleteTemporal @SchemaName = @SchemaName, @TableName = @TableName, @ColumnName = 'Name', @Value = @Value" -Parameters @{ SchemaName = $schemaName; TableName = $dataSet.Tables[0].TableName; Value = $object.Name; } | Enter-DbTransaction -TransactionName $InputObject.Substring(0, [Math]::Min($InputObject.Length, 32)) -PassThru
+
+            # To bulk copy we need proper schema and table names
+            $dataSet.Tables | ForEach {
+                $_.TableName = "[$schemaName].[$($_.TableName)]"
             }
+            
+            # Delete
+            try {
+                $dbData | Get-DbData -NoCommandBuilder 
+                $dbData | New-DbBulkCopy -DataSet $dataSet -Timeout 600
+                $dbData | Exit-DbTransaction -Commit
+            } catch {
+                $dbData | Exit-DbTransaction -Rollback
+                throw
+            }
+            
+            $endDate = Get-Date
+            Write-Verbose "Finished $InputObject at $endDate"
+            "($InputObject Schema $schemaName)" | Add-PerformanceRecord $performanceSchema
+            "($InputObject Total)" | Add-PerformanceRecord $performanceTotal
+
+            Get-PerformanceRecord | Sort Value -Descending | ForEach { 
+                Write-Output "Performance $($_.Name) = $($_.Value)" 
+            } 
         }
-
-        $endDate = Get-Date
-        Write-Log Trace $ServerInstance "Finished $ServerInstance at $endDate"
-        "($ServerInstance Schema $schemaName)" | Add-PerformanceRecord $performanceSchema
-        "($ServerInstance Total)" | Add-PerformanceRecord $performanceTotal
-
-        Get-PerformanceRecord | Sort Value -Descending | %{ Write-Log Debug $ServerInstance "Performance $($_.Name) = $($_.Value)" }
-    } catch {
-        Write-Log Error $ServerInstance "" $_
+    }
+    
+    end {
+        Publish-Jojoba
     }
 }
-
