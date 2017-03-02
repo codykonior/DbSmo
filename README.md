@@ -11,73 +11,87 @@
     Destination database needs the destination schema (Smo) to exist,
     and for the below stored procedure:
 
-Create Procedure dbo.DeleteTemporal
-    @SchemaName Sysname,
+    @SchemaName Sysname,    
     @TableName Sysname,
-    @Name Sysname
-As
-Begin
-    Declare @Tables Table (
-        Level Int,
-        SchemaName Sysname,
-        TableName Sysname,
+    @Value Sysname    
+As    
+Begin    
+    Set Nocount On    
+    
+    Declare @Tables Table (    
+        Level Int,    
+        SchemaName Sysname,    
+        TableName Sysname,    
         ColumnName Sysname
-        )
-
-    Declare @ColumnName Sysname
-    Declare @Sql Nvarchar(1000)
-
-    ; With Cte As (
-        Select  1 As level,
-                t.schema_id,
-                t.object_id,
-                Cast('Name' As Sysname) As column_name
+        )    
+    
+    Declare @Sql Nvarchar(Max) = ''
+	Declare @SqlLine Nvarchar(Max) = ''
+    
+    ; With Cte As (    
+	    Select  1 As level,    
+                s.name As SchemaName,
+				t.name As TableName,
+				c.name As ColumnName
         From    sys.tables t
-        Where   t.schema_id = Schema_Id(@SchemaName)
+		Join	sys.schemas s
+		On		t.schema_id = s.schema_id
+		Join	sys.columns c
+		On		t.object_id = c.object_id
+        Where   s.name = @SchemaName
         And     t.name = @TableName
-        Union   All
-        Select  level + 1,
-                t.schema_id,
-                t.object_id,
-                Cast(@TableName + 'Name' As Sysname) As column_name
-        From    Cte c
-        Join    sys.foreign_keys fk
-        On      c.object_id = fk.referenced_object_id
-        Join    sys.tables t
-        On      fk.schema_id = t.schema_id
-        And     fk.parent_object_id = t.object_id
-        Where   fk.delete_referential_action_desc = 'CASCADE'
-        )
-    Insert  @Tables
-    Select  level As Level,
-            Quotename(Schema_Name(schema_id)),
-            Quotename(Object_Name(object_id)),
-            Quotename(column_name) As Column_Name
-    From    Cte c
+		And		c.name = @ColumnName
+        Union   All    
+        Select  level + 1,    
+                Schema_Name(t.schema_id),
+				t.name,
+				c2.name
+        From    Cte
+		Join	sys.columns c
+		On		Object_Id(Quotename(Cte.SchemaName) + '.' + Quotename(Cte.TableName)) = c.object_id
+		And		Cte.ColumnName = c.name
+		Join    sys.foreign_key_columns fkc
+		On		c.object_id = fkc.referenced_object_id
+		And		c.column_id = fkc.referenced_column_id
+		Join    sys.tables t
+        On      fkc.parent_object_id = t.object_id
+		Join	sys.columns c2
+		On		fkc.parent_object_id = c2.object_id
+		And		fkc.parent_column_id = c2.column_id
+        -- Where   fk.delete_referential_action_desc = 'CASCADE'    
+        )    
+    Insert  @Tables    
+    Select  level As Level,    
+            Quotename(SchemaName) As SchemaName,    
+            Quotename(TableName) As TableName,    
+            Quotename(ColumnName) As ColumnName    
+    From    Cte c    
+    
+    Declare CTE_Delete_Temporal Cursor Local Forward_Only Read_Only Static For    
+            Select  SchemaName,    
+                    TableName,    
+                    ColumnName    
+            From    @Tables    
+            Order By Level Desc    
+    
+    Open    CTE_Delete_Temporal    
+    Fetch   Next From CTE_Delete_Temporal Into @SchemaName, @TableName, @ColumnName    
+    
+    While   @@Fetch_Status = 0    
+    Begin    
+            Set     @SqlLine = 'Delete From ' + @SchemaName + '.' + @TableName + ' Where ' + @ColumnName + ' = @Value;
+'        
+			Print	@SqlLine
+			Set		@Sql += @SqlLine
+            Fetch   Next From CTE_Delete_Temporal Into @SchemaName, @TableName, @ColumnName    
+    End    
+    
+    Close   CTE_Delete_Temporal    
+    Deallocate CTE_Delete_Temporal    
 
-    Declare CTE_Delete_Temporal Cursor Local Forward_Only Read_Only Static For
-            Select  SchemaName,
-                    TableName,
-                    ColumnName
-            From    @Tables
-            Order By Level Desc
-
-    Open    CTE_Delete_Temporal
-    Fetch   Next From CTE_Delete_Temporal Into @SchemaName, @TableName, @ColumnName
-
-    While   @@Fetch_Status = 0
-    Begin
-            Set     @Sql = 'Delete From ' + @SchemaName + '.' + @TableName + ' Where ' + @ColumnName + ' = @Name'
-            Exec    sp_executesql @Sql, N'@Name Sysname', @Name
-
-            Fetch   Next From CTE_Delete_Temporal Into @SchemaName, @TableName, @ColumnName
-    End
-
-    Close   CTE_Delete_Temporal
-    Deallocate CTE_Delete_Temporal
+	Exec    sp_executesql @Sql, N'@Value Sysname', @Value
 End
 Go
-
 	
 ## EXAMPLE #1
 
