@@ -14,7 +14,7 @@
 
 #>
 
-function Add-SmoDatabaseSchema {
+function New-DbSmoSchema {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true)]
@@ -28,7 +28,7 @@ function Add-SmoDatabaseSchema {
         [switch] $Script
     )
 
-    $scriptText = $()
+    $scriptText = New-Object System.Collections.ArrayList
 
     $sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection($ServerInstance)
     $sqlConnection.Connect()
@@ -38,14 +38,14 @@ function Add-SmoDatabaseSchema {
     $newSchema = New-Object Microsoft.SqlServer.Management.Smo.Schema($sqlDatabase, $schemaName)
     $newSchema.Refresh()
     if ($Script) {
-        Write-Log Trace $ServerInstance "Schema scripted"
-        $scriptText += $newSchema.Script()
+        Write-Verbose "Schema scripted"
+        [void] $scriptText.Add($newSchema.Script())
     } else {
         if ($newSchema.State -eq "Existing") {
-            Write-Log Trace $ServerInstance "Schema altered"
+            Write-Verbose "Schema altered"
             $newSchema.Alter()
         } else {
-            Write-Log Trace $ServerInstance "Schema created"
+            Write-Verbose "Schema created"
             $newSchema.Create()
         }
     }
@@ -54,13 +54,13 @@ function Add-SmoDatabaseSchema {
     foreach ($table in $DataSet.Tables) {
         try {
             $tableName = $table.TableName
-            Write-Log Trace $ServerInstance "Converting table $tableName"
+            Write-Verbose "Converting table $tableName"
             $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
             # Add temporal table columns if this is SQL 2016 onwards
             if ($newTable.Columns.Count -eq 0 -and $sqlConnection.ServerVersion.Major -ge 13) {
-                Write-Log Trace $ServerInstance "Adding temporal fields"
+                Write-Verbose "Adding temporal fields"
                 $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
                 $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
                 $fromColumn.Nullable = $false # Columns belonging to a system-time period cannot be nullable.
@@ -83,9 +83,60 @@ function Add-SmoDatabaseSchema {
 
             # Iterate columns where the column names aren't already in the table
             $changed = $false
-            foreach ($column in ($table.Columns | Where { ($newTable.Columns | Select -ExpandProperty Name) -notcontains $_.ColumnName })) {
-                $dataType = ConvertTo-SmoDataType $column.DataType.Name
-                Write-Log Trace $ServerInstance "Adding column $($column.ColumnName) as $dataType"
+            foreach ($column in ($table.Columns | Where-Object { ($newTable.Columns | Select-Object -ExpandProperty Name) -notcontains $_.ColumnName })) {
+                $dataType = switch ($column.DataType.Name) {  
+                    "Boolean" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::Bit
+                    }  
+                    "Byte[]" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::VarBinary
+                    }
+                    "Byte"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::TinyInt
+                    }  
+                    "DateTime"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::DateTime2
+                    }     
+                    "Decimal" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::Decimal
+                    }  
+                    "Double" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::Float
+                    }  
+                    "Guid" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::UniqueIdentifier
+                    }  
+                    "Int16"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
+                    }  
+                    "Int32"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::Int
+                    }  
+                    "Int64" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
+                    }  
+                    "UInt16"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
+                    }  
+                    "UInt32"  {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt # Cluster.RootMemoryReserved; ClusterNode.DrainTarget; ClusterGroup.FailoverThreshold
+                    }  
+                    "UInt64" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
+                    }  
+                    "Single" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::Decimal
+                    }
+                    "String" {
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::NVarChar
+                    }
+                    default {
+                        # This basically defaults everything else so that if we passed something we really
+                        # didn't expect then we won't be storing a raw object; it'll be cast to string.
+                        [Microsoft.SqlServer.Management.Smo.SqlDataType]::NVarChar
+                    }  
+                }  
+                Write-Verbose "Adding column $($column.ColumnName) as $dataType"
 
                 if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar" -or $dataType -eq "NVarChar") {
                     if ($column.MaxLength -ne -1) {
@@ -93,19 +144,19 @@ function Add-SmoDatabaseSchema {
                     } else {
                         $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("$($dataType)Max")
                     }
-                } elseif ($dataType -eq "Decimal" -and ($column.ColumnName -like "*LSN" -or $column.ColumnName -like "*LogSequenceNumber")) {
-                    # These need to be of length 25, 0; the default is 19, 0.
-                    #   Database.MirroringFailoverLogSequenceNumber
-                    #   AvailabilityDatabase.RecoveryLSN 
-                    #   AvailabilityDatabase.TruncationLSN 
-                    #   DatabaseReplicaState.EndOfLogLSN 
-                    #   DatabaseReplicaState.LastCommitLSN 
-                    #   DatabaseReplicaState.LastHardenedLSN 
-                    #   DatabaseReplicaState.LastReceivedLSN 
-                    #   DatabaseReplicaState.LastRedoneLSN 
-                    #   DatabaseReplicaState.LastSentLSN 
-                    #   DatabaseReplicaState.RecoveryLSN 
-                    #   DatabaseReplicaState.TruncationLSN 
+                } elseif ($dataType -eq "Decimal") {
+                    # The only known uses of Decimal in SMO are for LSN. It defaults to 18, 0 but we need 25, 0.
+                    # AvailabilityDatabase.RecoveryLSN
+                    # AvailabilityDatabase.TruncationLSN
+                    # Database.MirroringFailoverLogSequenceNumber
+                    # DatabaseReplicaState.EndOfLogLSN
+                    # DatabaseReplicaState.LastCommitLSN
+                    # DatabaseReplicaState.LastHardenedLSN
+                    # DatabaseReplicaState.LastReceivedLSN
+                    # DatabaseReplicaState.LastRedoneLSN
+                    # DatabaseReplicaState.LastSentLSN
+                    # DatabaseReplicaState.RecoveryLSN
+                    # DatabaseReplicaState.TruncationLSN
                     $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType, 25, 0)
                 } else {
                     $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType)
@@ -121,9 +172,9 @@ function Add-SmoDatabaseSchema {
 
             # If the SMO table has a primary key but the new/existing table doesn't
             if ($table.PrimaryKey) {
-                if (!($newTable.Indexes | Where { $_.IndexKeyType -eq "DriPrimaryKey" })) {
-                    $primaryKeyName = $table.Constraints | Where { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select -ExpandProperty ConstraintName
-                    Write-Log Trace $ServerInstance "Adding primary key $primaryKeyName"
+                if (!($newTable.Indexes | Where-Object { $_.IndexKeyType -eq "DriPrimaryKey" })) {
+                    $primaryKeyName = $table.Constraints | Where-Object { $_ -is [System.Data.UniqueConstraint] -and $_.IsPrimaryKey } | Select-Object -ExpandProperty ConstraintName
+                    Write-Verbose "Adding primary key $primaryKeyName"
 
                     $primaryKey = New-Object Microsoft.SqlServer.Management.Smo.Index($newTable, $primaryKeyName)
                     $primaryKey.IndexType = [Microsoft.SqlServer.Management.Smo.IndexType]::ClusteredIndex
@@ -137,26 +188,26 @@ function Add-SmoDatabaseSchema {
                     $newTable.Indexes.Add($primaryKey)
                 }
             } else {
-                Write-Log Warn $ServerInstance "$tableName doesn't have a primary key!"
+                Write-Warning "$tableName doesn't have a primary key!"
             }
 
             if ($changed) {
                 # You must script out the table, the primary key, and the foreign keys separately
                 if ($Script) {
-                    Write-Log Trace $ServerInstance "Table scripted"
-                    $scriptText += $newTable.Script()
+                    Write-Verbose "Table scripted"
+                    [void] $scriptText.Add($newTable.Script())
                 } else {
                     if ($newTable.State -eq "Existing") {
-                        Write-Log Trace $ServerInstance "Table altered"
+                        Write-Verbose "Table altered"
                         $newTable.Alter()
                     } else {
-                        Write-Log Trace $ServerInstance "Table created"
+                        Write-Verbose "Table created"
                         $newTable.Create()
                     }
                 }
             }
         } catch {
-            Write-Log Error $ServerInstance "" $_
+            throw
         }
     }
 
@@ -165,10 +216,10 @@ function Add-SmoDatabaseSchema {
         $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
         $newTable.Refresh() # This will fill the schema from the database
         
-        foreach ($constraint in ($table.Constraints | Where { $_ -is [System.Data.ForeignKeyConstraint] -and ($newTable.ForeignKeys | Select -ExpandProperty Name) -notcontains $_.ConstraintName })) {
+        foreach ($constraint in ($table.Constraints | Where-Object { $_ -is [System.Data.ForeignKeyConstraint] -and ($newTable.ForeignKeys | Select-Object -ExpandProperty Name) -notcontains $_.ConstraintName })) {
             try {
                 $constraintName = $constraint.ConstraintName
-                Write-Log Trace $ServerInstance "Adding foreign key $($tableName).$constraintName"
+                Write-Verbose "Adding foreign key $($tableName).$constraintName"
 
                 $foreignKey = New-Object Microsoft.SqlServer.Management.Smo.ForeignKey($tables[$tableName], $constraintName)
                 $foreignKey.ReferencedTable = $constraint.RelatedTable.TableName
@@ -179,12 +230,12 @@ function Add-SmoDatabaseSchema {
                 }
 
                 if ($Script) {
-                    $scriptText += $foreignKey.Script()
+                    [void] $scriptText.Add($foreignKey.Script())
                 } else {
                     $foreignKey.Create()
                 }
             } catch {
-                Write-Log Error $ServerInstance "" $_
+                throw
             }
         }
     }
