@@ -16,9 +16,11 @@ foreach ($fileName in (Get-ChildItem $PSScriptRoot "*.ps1" -Recurse)) {
     }
 }
 
-Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
+Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
         # Current connection settings
         "ManagedComputer/ConnectionSettings", # Wmi only
+        "ManagedComputer/Service/Dependencies", # Fatally broken, returns nothing useful
+
         "Server/Database/ActiveConnections",
         "Server/Database/DboLogin",
         "Server/Database/DefaultSchema",
@@ -39,7 +41,7 @@ Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
         "Server/ServiceMasterKey",
         "Server/SystemDataTypes",
         "Server/SystemMessages",
-
+        
         # Extremely time consuming for little gain
         "Server/Database/ServiceBroker",
 
@@ -76,8 +78,8 @@ Set-Variable -Scope Script -Option Constant -Name SmoDbPathExclusions -Value @(
         # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't. 
     )
 
-Set-Variable -Scope Script -Option Constant -Name SmoDbPropertyExclusions -Value @("ConnectionContext", "ExecutionManager", "Events", "IsDesignMode", "Parent", "State", "Urn", "UserData")
-    # ConnectionContext was in 2014; ExecutionManager is another wrapper in 2016
+Set-Variable -Scope Script -Option Constant -Name DbSmoPropertyExclusions -Value @("ConnectionContext", "ExecutionManager", "Events", "IsDesignMode", "Parent", "State", "Urn", "UserData" <#  ProcessorUsage often throws exceptions #>)
+    # ConnectionContext was in SMO 2014; ExecutionManager is another wrapper in SMO 2016
 
 Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
 	"System.Boolean",
@@ -92,7 +94,7 @@ Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
         "System.Int32",
         "System.Int64",
         "System.Single",
-	"System.String",
+	    "System.String",
         "System.UInt16",
         "System.UInt32",
         "System.UInt64"
