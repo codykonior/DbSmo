@@ -29,6 +29,7 @@ CompanyName = 'Cody Konior'
 Copyright = '(c) 2016 Cody Konior. All rights reserved.'
 
 # Description of the functionality provided by this module
+Description = 'Retrieve all SMO/WMI properties for a server and store in auto-created temporal tables'
 
 # Minimum version of the Windows PowerShell engine required by this module
 # PowerShellVersion = ''
