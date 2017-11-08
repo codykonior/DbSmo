@@ -15,26 +15,39 @@
 #>
 
 function New-DbSmoSchema {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = "ServerInstance")]
     param (
         [Parameter(Mandatory = $true)]
         [System.Data.DataSet] $DataSet,
-        [Parameter(Mandatory = $true)]
-        $ServerInstance,
-        [Parameter(Mandatory = $true)]
-        $DatabaseName,
-        [Parameter(Mandatory = $true)]
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ServerInstance")]
+		$ServerInstance,
+        [Parameter(Mandatory = $true, ParameterSetName = "ServerInstance")]
+		$DatabaseName,
+        [Parameter(ParameterSetName = "Connection")]
+        $Connection,
+
         $SchemaName,
         [switch] $Script
     )
 
     $scriptText = New-Object System.Collections.ArrayList
 
-    $sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection($ServerInstance)
-    $sqlConnection.Connect()
-    $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
-    $sqlDatabase = $sqlServer.Databases[$databaseName]
+	if ($PSCmdlet.ParameterSetName -eq "Connection") { 
+		$sqlConnection = $Connection
+		$DatabaseName = $sqlConnection.Database
 
+	    $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
+	} else {
+		$sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection
+		$sqlConnection.ConnectTimeout = 60
+		$sqlConnection.ServerInstance = $ServerInstance
+		$sqlConnection.DatabaseName = $DatabaseName
+		$sqlConnection.Connect()
+	    $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
+	}
+
+    $sqlDatabase = $sqlServer.Databases[$DatabaseName]
     $newSchema = New-Object Microsoft.SqlServer.Management.Smo.Schema($sqlDatabase, $schemaName)
     $newSchema.Refresh()
     if ($Script) {
@@ -59,7 +72,7 @@ function New-DbSmoSchema {
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
             # Add temporal table columns if this is SQL 2016 onwards
-            if ($newTable.Columns.Count -eq 0 -and $sqlConnection.ServerVersion.Major -ge 13) {
+            if ($newTable.Columns.Count -eq 0 -and ([version] $sqlConnection.ServerVersion).Major -ge 13) {
                 Write-Verbose "Adding temporal fields"
                 $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
                 $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
