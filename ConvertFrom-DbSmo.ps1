@@ -434,7 +434,7 @@ function ConvertFrom-DbSmo {
     # Get a list of properties to process; but remove the ones that match the wildcards in our exclusion list
     $performanceExclude = Get-Date
     $properties = New-Object System.Collections.ArrayList
-    $InputObject.psobject.Properties | Where-Object { $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" } | ForEach { [void] $properties.Add($_) } 
+    $InputObject.psobject.Properties | Where-Object { $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" } | ForEach-Object { [void] $properties.Add($_) } 
 
     # Smo
     # Some of the complexity of the checks here are to make sure we don't do stuff on a "Creating" object, which don't react well to reading and writing properties.
@@ -450,21 +450,21 @@ function ConvertFrom-DbSmo {
                     Write-Verbose "Skipped a property because it gave an error, $_"
                 }
             }
-            $newProperties | ForEach { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach-Object { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["AdvancedProperties"] -and $InputObject.psobject.Properties["AdvancedProperties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.SqlPropertyCollection") {
             $newProperties += $InputObject.AdvancedProperties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach-Object { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     # Wmi, these have a different Type name
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["Properties"] -and $InputObject.psobject.Properties["Properties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.PropertyCollection") {
             # I added the check for psobject properties name because the Server/Configuration is a special case below and does not have a Name property; doing it here ruins stuff
             $newProperties = $InputObject.Properties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach-Object { Write-Verbose "Specially added $($_.Name)"; [void] $properties.Add($_) }
     }
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["AdvancedProperties"] -and $InputObject.psobject.Properties["AdvancedProperties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.PropertyCollection") {
             $newProperties = $InputObject.AdvancedProperties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
-            $newProperties | ForEach { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
+            $newProperties | ForEach-Object { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
     }    
     
     "(Performance Exclude)" | Add-PerformanceRecord $performanceExclude
@@ -475,7 +475,7 @@ function ConvertFrom-DbSmo {
 
     <#
     # Make sure never to remove the Enum* part or we'd be calling random methods!
-    $InputObject.psobject.Methods | Where-Object { $_.Name -Like "Enum*" } | ForEach {
+    $InputObject.psobject.Methods | Where-Object { $_.Name -Like "Enum*" } | ForEach-Object {
         if ($path -eq "Server/Database/User" -and @("EnumRoles", "EnumObjectPermissions") -contains $_.Name) {
             $recurseProperties += $_
         }
@@ -737,6 +737,8 @@ function ConvertFrom-DbSmo {
                                 throw "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)."
                             } elseif (Test-Error @{ Number = 924; Class = 14; State = 1 }) {
                                 Write-Verbose "$($tab)Unable to examine the database in detail because it's in SINGLE_USER mode."
+                            } elseif (Test-Error @{ Number = 926; Class = 14; State = 1 }) {
+                                Write-Verbose "$($tab)Unable to examine the database in detail because it's in SUSPECT mode."
                             } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
                                 Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
                             } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
@@ -755,6 +757,8 @@ function ConvertFrom-DbSmo {
                                 Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
                             } elseif (Test-Error @{ Number = 207; Class = 16; State = 1; Message = "Invalid column name 'is_distributed'." }) {
                                 Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
+                            } elseif (Test-Error @{ Message = "Invalid object name 'sys.federations'." }) {
+                                Write-Verbose "$($tab)Skipping undefined federations."
                             } else {
                                 throw
                             }
@@ -769,6 +773,8 @@ function ConvertFrom-DbSmo {
                         throw "Administrator (or other) permission required to use WMI."
                     } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
                         throw "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)."
+                    } elseif (Test-Error @{ Number = 926; Class = 14; State = 1 }) {
+                        Write-Verbose "$($tab)Unable to examine the database in detail because it's in SUSPECT mode."
                     } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
                         Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
                     } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
@@ -787,6 +793,8 @@ function ConvertFrom-DbSmo {
                         Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
                     } elseif (Test-Error @{ Number = 207; Class = 16; State = 1; Message = "Invalid column name 'is_distributed'." }) {
                         Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
+                    } elseif (Test-Error @{ Message = "Invalid object name 'sys.federations'." }) {
+                        Write-Verbose "$($tab)Skipping undefined federations."
                     } else {
                         throw
                     }
@@ -806,6 +814,8 @@ function ConvertFrom-DbSmo {
                         throw "Administrator (or other) permission required to use WMI."
                     } elseif (Test-Error @{ ErrorCode = "InvalidNamespace" }) {
                         throw "SMO is unable to find WMI endpoint; this could be the SMO 2016 -> 2014/2012 bug, SMO 2014 -> 2012 bug, or SQL Server < 2005 (not supported by SMO)."
+                    } elseif (Test-Error @{ Number = 926; Class = 14; State = 1 }) {
+                        Write-Verbose "$($tab)Unable to examine the database in detail because it's in SUSPECT mode."
                     } elseif (Test-Error @{ Number = 927; Class = 14; State = 2 }) {
                         Write-Verbose "$($tab)Unable to examine the database in detail because it's currently restoring."
                     } elseif (Test-Error @{ Number = 942; Class = 14; State = 4 }) {
@@ -824,6 +834,8 @@ function ConvertFrom-DbSmo {
                         Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
                     } elseif (Test-Error @{ Number = 207; Class = 16; State = 1; Message = "Invalid column name 'is_distributed'." }) {
                         Write-Verbose "$($tab)SMO is unable to query some data in preview releases of SQL 2016 prior to RTM."
+                    } elseif (Test-Error @{ Message = "Invalid object name 'sys.federations'." }) {
+                        Write-Verbose "$($tab)Skipping undefined federations."
                     } else {
                         throw
                     }
@@ -845,6 +857,8 @@ function ConvertFrom-DbSmo {
             # Choke point for exceptions
             throw
         }
+    } else {
+        Write-Verbose "$($tab)Not writing row for $tableName"
     }
 
     Write-Verbose "$($tab)Return"
