@@ -14,11 +14,11 @@
 
 #>
 
-function Add-DbSmo {
+function Add-DbWmi {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
-        [Alias("ServerInstance")]
+        [Alias("ComputerName")]
         [string] $InputObject,
 
         [Parameter(Mandatory = $true)]
@@ -44,7 +44,7 @@ function Add-DbSmo {
             Clear-PerformanceRecord
             $performanceTotal = Get-Date
 
-            $object = Get-DbSmo $InputObject -Preload
+            $object = Get-DbWmi $InputObject
             $dataSet = ConvertFrom-DbSmo $object
             "($InputObject Schema)" | Add-PerformanceRecord $performanceTotal
             Write-DbSmoData $dataSet $DestinationServerInstance $DestinationDatabaseName $DestinationSchemaName
@@ -55,7 +55,7 @@ function Add-DbSmo {
             }     
         }
     }
-    
+
     end {
         Publish-Jojoba
     }

@@ -14,7 +14,7 @@ ModuleToProcess = 'DbSmo.psm1'
 # RootModule = ''
 
 # Version number of this module.
-ModuleVersion = '1.4.0.3'
+ModuleVersion = '1.4.0.4'
 
 # ID used to uniquely identify this module
 GUID = '6feec22b-a827-4846-8bcd-c5a15c255ed3'
@@ -71,7 +71,11 @@ RequiredModules = @(
 # NestedModules = @()
 
 # Functions to export from this module
-FunctionsToExport = '*'
+FunctionsToExport = @(
+    "Add-DbSmo",
+	"Add-DbWmi",
+    "ConvertFrom-DbSmo"
+)
 
 # Cmdlets to export from this module
 CmdletsToExport = '*'
@@ -90,6 +94,7 @@ AliasesToExport = '*'
 
 # Private data to pass to the module specified in RootModule/ModuleToProcess
 PrivateData = @{
+
     PSData = @{
 
         # Tags applied to this module. These help with module discovery in online galleries.
