@@ -29,7 +29,6 @@ CompanyName = 'Cody Konior'
 Copyright = '(c) 2016 Cody Konior. All rights reserved.'
 
 # Description of the functionality provided by this module
-# Description = ''
 
 # Minimum version of the Windows PowerShell engine required by this module
 # PowerShellVersion = ''
