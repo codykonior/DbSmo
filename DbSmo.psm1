@@ -10,13 +10,7 @@ $ErrorActionPreference = "Stop"
 foreach ($fileName in (Get-ChildItem $PSScriptRoot "*.ps1" -Recurse)) {
     try {
 	    Write-Verbose "Loading function from path '$fileName'."
-	    if ($Host.Name -ne "Default Host") {
-            # Allows debugging
-            . $fileName.FullName
-        } else {
-            # Faster but no debugging
-            Invoke-Expression ([System.IO.File]::ReadAllText($fileName.FullName))
-        }
+	    .$fileName.FullName
     } catch {
 	    Write-Error $_
     }
@@ -41,6 +35,9 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
         "Server/Database/IsDbOwner",
         "Server/Database/IsDbSecurityAdmin",
         "Server/Database/IsLoginManager",
+
+        # SQL 2017 - useless
+        "Server/SupportedAvailabilityGroupClusterTypes",
 
         # Standard, big, not useful, and empty settings
         "Server/Languages",
