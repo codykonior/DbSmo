@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 foreach ($fileName in (Get-ChildItem $PSScriptRoot "*.ps1" -Recurse)) {
     try {
 	    Write-Verbose "Loading function from path '$fileName'."
-	    .$fileName.FullName
+	    . $fileName.FullName
     } catch {
 	    Write-Error $_
     }
@@ -78,7 +78,14 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
         "Server/Settings",
         "Server/Database/DatabaseOptions"
         # There is one caveat; while we exclude Server/Settings, in the code we redirect Server/OleDbProviderSettings
-        # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't. 
+        # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't.
+
+        # Read the strings only instead
+        "Server/AvailabilityGroup/AvailabilityReplica/ReadOnlyRoutingList",
+        "Server/AvailabilityGroup/AvailabilityReplica/LoadBalancedReadOnlyRoutingList",
+
+        # This is temporarily broken
+        "Server/ResourceGovernor/ResourcePool/ResourcePoolAffinityInfo/Schedulers/Cpu"
     )
 
 Set-Variable -Scope Script -Option Constant -Name DbSmoPropertyExclusions -Value @("ConnectionContext", "ExecutionManager", "Events", "IsDesignMode", "Parent", "State", "Urn", "UserData" <#  ProcessorUsage often throws exceptions #>)

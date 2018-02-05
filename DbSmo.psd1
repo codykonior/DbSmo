@@ -8,13 +8,11 @@
 
 @{
 
-ModuleToProcess = 'DbSmo.psm1'
-
 # Script module or binary module file associated with this manifest.
-# RootModule = ''
+RootModule = 'DbSmo.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.4.0.5'
+ModuleVersion = '1.4.0.7'
 
 # ID used to uniquely identify this module
 GUID = '6feec22b-a827-4846-8bcd-c5a15c255ed3'
@@ -52,6 +50,7 @@ Description = 'Retrieve all SMO/WMI properties for a server and store in auto-cr
 # Modules that must be imported into the global environment prior to importing this module
 RequiredModules = @(
     "Jojoba", 
+    "Performance",
     "SqlServer"
     )
 
