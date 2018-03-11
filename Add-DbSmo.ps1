@@ -17,9 +17,8 @@
 function Add-DbSmo {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true, ValueFromPipeline = $true, ValueFromPipelineByPropertyName = $true)]
-        [Alias("ServerInstance")]
-        [string] $InputObject,
+        [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
+        [string] $ServerInstance,
 
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
@@ -31,9 +30,8 @@ function Add-DbSmo {
         [ValidateNotNullOrEmpty()]
         [string] $DestinationSchemaName = "Smo",
 
-        [string] $JojobaBatch = [System.Guid]::NewGuid().ToString(),
-        [switch] $JojobaJenkins,
-        [int]    $JojobaThrottle = $env:NUMBER_OF_PROCESSORS
+        [Parameter(ValueFromRemainingArguments)]
+        $Jojoba
     )
 
     begin {
@@ -44,11 +42,11 @@ function Add-DbSmo {
             Clear-PerformanceRecord
             $performanceTotal = Get-Date
 
-            $object = Get-DbSmo $InputObject -Preload
+            $object = Get-DbSmo $ServerInstance -Preload
             $dataSet = ConvertFrom-DbSmo $object
-            "($InputObject Schema)" | Add-PerformanceRecord $performanceTotal
+            "($ServerInstance Schema)" | Add-PerformanceRecord $performanceTotal
             Write-DbSmoData $dataSet $DestinationServerInstance $DestinationDatabaseName $DestinationSchemaName
-            "($InputObject)" | Add-PerformanceRecord $performanceTotal
+            "($ServerInstance)" | Add-PerformanceRecord $performanceTotal
 
             Get-PerformanceRecord | Sort-Object Value -Descending | ForEach-Object { 
                 Write-Output "Performance $($_.Name) = $($_.Value)" 
