@@ -56,7 +56,7 @@ function Write-DbSmoData {
 
     Use-DbRetry {
         Add-DbDeleteTemporalProcedure $ServerInstance $DatabaseName $SchemaName
-        $dbData = New-DbConnection $ServerInstance $DatabaseName | New-DbCommand "Exec dbo.DeleteTemporal @SchemaName = @SchemaName, @TableName = @TableName, @ColumnName = 'Name', @Value = @Value" -Parameters @{ SchemaName = $SchemaName; TableName = $baseTableName; Value = $dataSet.Tables[0].Rows[0].Name; } | Enter-DbTransaction -TransactionName $InputObject.Substring(0, [Math]::Min($ServerInstance.Length, 32)) -PassThru
+        $dbData = New-DbConnection $ServerInstance $DatabaseName | New-DbCommand "Exec dbo.DeleteTemporal @SchemaName = @SchemaName, @TableName = @TableName, @ColumnName = 'Name', @Value = @Value" -Parameters @{ SchemaName = $SchemaName; TableName = $baseTableName; Value = $dataSet.Tables[0].Rows[0].Name; } | Enter-DbTransaction -PassThru
 
         # Delete
         try {

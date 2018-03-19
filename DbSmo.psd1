@@ -12,7 +12,7 @@
 RootModule = 'DbSmo.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.4.0.8'
+ModuleVersion = '1.4.0.9'
 
 # ID used to uniquely identify this module
 GUID = '6feec22b-a827-4846-8bcd-c5a15c255ed3'
