@@ -21,9 +21,9 @@ function New-DbSmoSchema {
         [System.Data.DataSet] $DataSet,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ServerInstance")]
-		$ServerInstance,
+        $ServerInstance,
         [Parameter(Mandatory = $true, ParameterSetName = "ServerInstance")]
-		$DatabaseName,
+        $DatabaseName,
         [Parameter(ParameterSetName = "Connection")]
         $Connection,
 
@@ -33,19 +33,19 @@ function New-DbSmoSchema {
 
     $scriptText = New-Object System.Collections.ArrayList
 
-	if ($PSCmdlet.ParameterSetName -eq "Connection") { 
-		$sqlConnection = $Connection
-		$DatabaseName = $sqlConnection.Database
+    if ($PSCmdlet.ParameterSetName -eq "Connection") { 
+        $sqlConnection = $Connection
+        $DatabaseName = $sqlConnection.Database
 
-	    $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
-	} else {
-		$sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection
-		$sqlConnection.ConnectTimeout = 60
-		$sqlConnection.ServerInstance = $ServerInstance
-		$sqlConnection.DatabaseName = $DatabaseName
-		$sqlConnection.Connect()
-	    $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
-	}
+        $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
+    } else {
+        $sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection
+        $sqlConnection.ConnectTimeout = 60
+        $sqlConnection.ServerInstance = $ServerInstance
+        $sqlConnection.DatabaseName = $DatabaseName
+        $sqlConnection.Connect()
+        $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
+    }
 
     $sqlDatabase = $sqlServer.Databases[$DatabaseName]
     $newSchema = New-Object Microsoft.SqlServer.Management.Smo.Schema($sqlDatabase, $schemaName)

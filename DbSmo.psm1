@@ -9,10 +9,10 @@ $ErrorActionPreference = "Stop"
 
 foreach ($fileName in (Get-ChildItem $PSScriptRoot "*.ps1" -Recurse)) {
     try {
-	    Write-Verbose "Loading function from path '$fileName'."
-	    . $fileName.FullName
+        Write-Verbose "Loading function from path '$fileName'."
+        . $fileName.FullName
     } catch {
-	    Write-Error $_
+        Write-Error $_
     }
 }
 
@@ -92,7 +92,7 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPropertyExclusions -Value
     # ConnectionContext was in SMO 2014; ExecutionManager is another wrapper in SMO 2016
 
 Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
-	"System.Boolean",
+    "System.Boolean",
         "System.Byte",
         "System.Byte[]",
         "System.Char",
@@ -104,14 +104,14 @@ Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
         "System.Int32",
         "System.Int64",
         "System.Single",
-	    "System.String",
+        "System.String",
         "System.UInt16",
         "System.UInt32",
         "System.UInt64"
         )
 
 Set-Variable -Scope Script -Option Constant -Name DataTypeString -Value @(
-	"System.Enum",
-	"System.Timespan",
-	"System.Version"
-	)
+    "System.Enum",
+    "System.Timespan",
+    "System.Version"
+    )

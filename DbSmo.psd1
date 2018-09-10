@@ -12,7 +12,7 @@
 RootModule = 'DbSmo.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.4.0.9'
+ModuleVersion = '1.4.1'
 
 # ID used to uniquely identify this module
 GUID = '6feec22b-a827-4846-8bcd-c5a15c255ed3'
@@ -72,7 +72,7 @@ RequiredModules = @(
 # Functions to export from this module
 FunctionsToExport = @(
     "Add-DbSmo",
-	"Add-DbWmi",
+    "Add-DbWmi",
     "ConvertFrom-DbSmo",
     "Add-DbDeleteTemporalProcedure"
 )

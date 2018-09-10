@@ -576,7 +576,7 @@ function ConvertFrom-DbSmo {
                 if ($propertyValue -ne $null) {
                     Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
     
-	        	    # This is how SMO represents null dates; a 0000 date or a 1900 date. Both are converted to null.
+                    # This is how SMO represents null dates; a 0000 date or a 1900 date. Both are converted to null.
                     if ($propertyValue -isnot [System.DateTime] -or @(599266080000000000, 0) -notcontains $propertyValue.Ticks) {
                         $row[$propertyName] = $propertyValue
                     }

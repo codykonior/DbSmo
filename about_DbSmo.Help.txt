@@ -162,10 +162,10 @@ Error adding datacolumn; because the property type being checked was wrong (scri
 
 1. Seems to include Server/Database/Default for some reason.
 
-VERBOSE: 	Recursing through collection
-VERBOSE: 		Working on Server[@Name='.']/Database[@Name='msdb']/Default[@Name='default_current_date' and @Schema='dbo'], the skeleton path is Server/Database/Default
-VERBOSE: 		Adding table Default
-VERBOSE: 		Calculating primary keys
+VERBOSE:    Recursing through collection
+VERBOSE:        Working on Server[@Name='.']/Database[@Name='msdb']/Default[@Name='default_current_date' and @Schema='dbo'], the skeleton path is Server/Database/Default
+VERBOSE:        Adding table Default
+VERBOSE:        Calculating primary keys
 
 2a. Exception while enumerating availability group?
 
