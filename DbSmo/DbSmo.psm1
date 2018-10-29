@@ -1,4 +1,4 @@
-[CmdletBinding()] 
+[CmdletBinding()]
 param(
 )
 
@@ -44,7 +44,7 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
         "Server/ServiceMasterKey",
         "Server/SystemDataTypes",
         "Server/SystemMessages",
-        
+
         # Extremely time consuming for little gain
         "Server/Database/ServiceBroker",
 
@@ -57,10 +57,10 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
         "Server/Database/ExtendedStoredProcedures",
         "Server/Database/PartitionFunctions",
         "Server/Database/PartitionSchemes",
-        "Server/Database/Rules", # These are an old kind of constraint            
+        "Server/Database/Rules", # These are an old kind of constraint
         "Server/Database/Schemas",
         "Server/Database/Sequences",
-        "Server/Database/StoredProcedures",            
+        "Server/Database/StoredProcedures",
         "Server/Database/Synonyms",
         "Server/Database/Tables",
         "Server/Database/Triggers",

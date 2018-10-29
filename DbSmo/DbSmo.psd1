@@ -49,7 +49,7 @@ Description = 'Retrieve all SMO/WMI properties for a server and store in auto-cr
 
 # Modules that must be imported into the global environment prior to importing this module
 RequiredModules = @(
-    "Jojoba", 
+    "Jojoba",
     "Performance",
     "SqlServer"
     )

@@ -14,11 +14,11 @@
 
 #>
 
-function Add-DbWmi {
+function Add-DbSmo {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory, ValueFromPipeline, ValueFromPipelineByPropertyName)]
-        [string] $ComputerName,
+        [string] $ServerInstance,
 
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
@@ -42,15 +42,15 @@ function Add-DbWmi {
             Clear-PerformanceRecord
             $performanceTotal = Get-Date
 
-            $object = Get-DbWmi $ComputerName
+            $object = Get-DbSmo $ServerInstance -Preload
             $dataSet = ConvertFrom-DbSmo $object
-            "($ComputerName Schema)" | Add-PerformanceRecord $performanceTotal
+            "($ServerInstance Schema)" | Add-PerformanceRecord $performanceTotal
             Write-DbSmoData $dataSet $DestinationServerInstance $DestinationDatabaseName $DestinationSchemaName
-            "($ComputerName)" | Add-PerformanceRecord $performanceTotal
+            "($ServerInstance)" | Add-PerformanceRecord $performanceTotal
 
-            Get-PerformanceRecord | Sort-Object Value -Descending | ForEach-Object { 
-                Write-Output "Performance $($_.Name) = $($_.Value)" 
-            }     
+            Get-PerformanceRecord | Sort-Object Value -Descending | ForEach-Object {
+                Write-Output "Performance $($_.Name) = $($_.Value)"
+            }
         }
     }
 

@@ -33,7 +33,7 @@ function New-DbSmoSchema {
 
     $scriptText = New-Object System.Collections.ArrayList
 
-    if ($PSCmdlet.ParameterSetName -eq "Connection") { 
+    if ($PSCmdlet.ParameterSetName -eq "Connection") {
         $sqlConnection = $Connection
         $DatabaseName = $sqlConnection.Database
 
@@ -77,7 +77,7 @@ function New-DbSmoSchema {
                 $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
                 $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
                 $fromColumn.Nullable = $false # Columns belonging to a system-time period cannot be nullable.
-                $fromColumn.IsHidden = $true                
+                $fromColumn.IsHidden = $true
                 $fromColumn.GeneratedAlwaysType = "AsRowStart"
                 $newTable.Columns.Add($fromColumn)
 
@@ -86,7 +86,7 @@ function New-DbSmoSchema {
                 $toColumn.IsHidden = $true
                 $toColumn.GeneratedAlwaysType = "AsRowEnd"
                 $newTable.Columns.Add($toColumn)
-                
+
                 $newTable.AddPeriodForSystemTime("_ValidFrom", "_ValidTo", $true) # If you accidentally passed non strings you get a "must provide existing column" error
 
                 $newTable.HistoryTableSchema = $SchemaName
@@ -97,46 +97,46 @@ function New-DbSmoSchema {
             # Iterate columns where the column names aren't already in the table
             $changed = $false
             foreach ($column in ($table.Columns | Where-Object { ($newTable.Columns | Select-Object -ExpandProperty Name) -notcontains $_.ColumnName })) {
-                $dataType = switch ($column.DataType.Name) {  
+                $dataType = switch ($column.DataType.Name) {
                     "Boolean" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Bit
-                    }  
+                    }
                     "Byte[]" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::VarBinary
                     }
                     "Byte"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::TinyInt
-                    }  
+                    }
                     "DateTime"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::DateTime2
-                    }     
+                    }
                     "Decimal" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Decimal
-                    }  
+                    }
                     "Double" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Float
-                    }  
+                    }
                     "Guid" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::UniqueIdentifier
-                    }  
+                    }
                     "Int16"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
-                    }  
+                    }
                     "Int32"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Int
-                    }  
+                    }
                     "Int64" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
-                    }  
+                    }
                     "UInt16"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
-                    }  
+                    }
                     "UInt32"  {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt # Cluster.RootMemoryReserved; ClusterNode.DrainTarget; ClusterGroup.FailoverThreshold
-                    }  
+                    }
                     "UInt64" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
-                    }  
+                    }
                     "Single" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Decimal
                     }
@@ -147,8 +147,8 @@ function New-DbSmoSchema {
                         # This basically defaults everything else so that if we passed something we really
                         # didn't expect then we won't be storing a raw object; it'll be cast to string.
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::NVarChar
-                    }  
-                }  
+                    }
+                }
                 Write-Verbose "Adding column $($column.ColumnName) as $dataType"
 
                 if ($dataType -eq "VarBinary" -or $dataType -eq "VarChar" -or $dataType -eq "NVarChar") {
@@ -174,7 +174,7 @@ function New-DbSmoSchema {
                 } else {
                     $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType($dataType)
                 }
-    
+
                 $newColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, $column.ColumnName, $dataType)
                 $newColumn.Nullable = $column.AllowDbNull
                 $newTable.Columns.Add($newColumn)
@@ -225,10 +225,10 @@ function New-DbSmoSchema {
     }
 
     foreach ($table in $DataSet.Tables) {
-        $tableName = $table.TableName        
+        $tableName = $table.TableName
         $newTable = New-Object Microsoft.SqlServer.Management.Smo.Table($sqlDatabase, $tableName, $SchemaName)
         $newTable.Refresh() # This will fill the schema from the database
-        
+
         foreach ($constraint in ($table.Constraints | Where-Object { $_ -is [System.Data.ForeignKeyConstraint] -and ($newTable.ForeignKeys | Select-Object -ExpandProperty Name) -notcontains $_.ConstraintName })) {
             try {
                 $constraintName = $constraint.ConstraintName

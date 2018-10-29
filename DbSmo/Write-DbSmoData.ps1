@@ -35,8 +35,8 @@ function Write-DbSmoData {
     try {
         $DataSet.EnforceConstraints = $true
     } catch {
-        $failures = $DataSet.Tables | ForEach-Object { 
-            if ($_.GetErrors()) { 
+        $failures = $DataSet.Tables | ForEach-Object {
+            if ($_.GetErrors()) {
                 "Table: $($_.TableName)"
                 "Errors:"
                 $_.GetErrors()
@@ -46,8 +46,8 @@ function Write-DbSmoData {
         throw "Enforcing constraints failed. What follows are the tables and rows involved: $failures"
     }
 
-    New-DbSmoSchema -DataSet $DataSet -ServerInstance $ServerInstance -DatabaseName $DatabaseName -SchemaName $SchemaName 
-    
+    New-DbSmoSchema -DataSet $DataSet -ServerInstance $ServerInstance -DatabaseName $DatabaseName -SchemaName $SchemaName
+
     $baseTableName = $DataSet.Tables[0].TableName
     # To bulk copy we need proper schema and table names
     $DataSet.Tables | ForEach-Object {
@@ -60,7 +60,7 @@ function Write-DbSmoData {
 
         # Delete
         try {
-            $dbData | Get-DbData -NoCommandBuilder 
+            $dbData | Get-DbData -NoCommandBuilder
             $dbData | New-DbBulkCopy -DataSet $DataSet -Timeout 600
             $dbData | Exit-DbTransaction -Commit
         } catch {

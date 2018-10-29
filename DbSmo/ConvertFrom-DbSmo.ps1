@@ -21,8 +21,8 @@ function ConvertFrom-DbSmo {
         $InputObject,
         [System.Data.DataSet] $OutputObject,
         [int] $Depth = 0,
-        # If there's no Urn property on the object we received, these "prior" properties are used to construct a path for 
-        # a) checking against exclusions and indirectly 
+        # If there's no Urn property on the object we received, these "prior" properties are used to construct a path for
+        # a) checking against exclusions and indirectly
         # b) the table name
         [string] $SubstitutePath,
         $ParentPrimaryKeyColumns,
@@ -30,11 +30,11 @@ function ConvertFrom-DbSmo {
         $MaxDepth = 10
     )
 
-    if ($OutputObject -eq $null) {
+    if ($null -eq $OutputObject) {
         $OutputObject = New-Object System.Data.DataSet
         $OutputObject.EnforceConstraints = $false
     }
-    
+
     $Depth++
     $tab = "`t" * $Depth
     # Do a depth check. If this triggered it would mean we did something really wrong because everything should be
@@ -42,7 +42,7 @@ function ConvertFrom-DbSmo {
     if ($Depth -gt $maxDepth) {
         throw "Max depth exceeded, this shouldn't have happened..."
     }
-    
+
     # Work out a "path". This is something like /Server/Database/User. We may get to some type which doesn't have
     # its own Urn so in those cases we can fall back to the parent path plus property name.
     if (!$InputObject.psobject.Properties["Urn"]) {
@@ -54,8 +54,8 @@ function ConvertFrom-DbSmo {
 
         Write-Verbose "$($tab)Working on $urn, the skeleton path is $path"
     }
-    
-    # These are table renames for conflicts and readability. I don't think it will work if you renamed 
+
+    # These are table renames for conflicts and readability. I don't think it will work if you renamed
     # one that has a foreign key dependency on it though. If you really wanted to do this you'd need
     # to work out how to make sub tables pick up this name; it gets extracted from the Urn which is why
     # it wouldn't work. Unless we switched that to use the path instead, and overwrote the path; here
@@ -93,8 +93,8 @@ function ConvertFrom-DbSmo {
             $tableName = "JobSchedule"
             break
         }
-        
-        # Login = Server/Login 
+
+        # Login = Server/Login
         "Server/LinkedServer/Login" {
             $tableName = "LinkedServerLogin" # Server/Login goes under just Login
             break
@@ -123,7 +123,7 @@ function ConvertFrom-DbSmo {
             $tableName = "UserDefaultLanguage"
             break
         }
-        
+
         # Don't use ServiceBroker
         "Server/Database/ServiceBroker" {
             $tableName = "DatabaseServiceBroker"
@@ -132,7 +132,7 @@ function ConvertFrom-DbSmo {
         "Server/Endpoint/ServiceBroker" {
             $tableName = "EndpointServiceBroker"
             break
-        }                
+        }
 
         # Don't use Role
         "Server/Role" {
@@ -225,8 +225,8 @@ function ConvertFrom-DbSmo {
             $tableName = "EndpointListenerIPAddress"
             break
         }
-        
-        
+
+
         "Server/JobServer/Schedule" {
             $tableName = "JobServerSchedule"
             break
@@ -259,14 +259,14 @@ function ConvertFrom-DbSmo {
             $tableName = "JobServerOperatorCategory"
             break
         }
-        
+
         "Server/ResourceGovernor/ResourcePool/WorkloadGroup" {
             $tableName = "ResourcePoolWorkloadGroup"
             break
         }
-       
+
        <#
-        # This is broken 
+        # This is broken
         "ManagedComputer/Service/Dependencies" {
             $tableName = "ServiceDependencies"
             break
@@ -315,12 +315,12 @@ function ConvertFrom-DbSmo {
         default {
             # Configuration entries all follow the same pattern. We flatten them into one table.
             if ($path -like "Server/Configuration/*") {
-                $tableName = "ServerConfiguration" 
+                $tableName = "ServerConfiguration"
             } else {
                 $tableName = $path -split "/" | Select-Object -Last 1
             }
         }
-    }           
+    }
     "(Path Switch)" | Add-PerformanceRecord $performancePath
 
     # We can pull out the existing table or create a new one
@@ -368,7 +368,7 @@ function ConvertFrom-DbSmo {
                 }
             }
             # Examples:
-            #   /Server Key = Name                
+            #   /Server Key = Name
             #   /Server/Database Key = ServerName, Name
             #   /Server/Mail/MailProfile = ServerName, Name (as Mail does not have a key)
             #   /Server/Database/User/DefaultLanguage (no Urn) = ServerName, DatabaseName, UserName
@@ -401,9 +401,9 @@ function ConvertFrom-DbSmo {
                 $column = New-Object System.Data.DataColumn
                 $column.ColumnName = $keyPropertyName
                 # It recognises all of these automatically Number but I populate them for prosperity anyway
-                $column.DataType = switch ($keyProperty.Value.ObjType) { "String" { "System.String" } "Boolean" { "System.Boolean" } "Number" { "System.Int32" } } 
+                $column.DataType = switch ($keyProperty.Value.ObjType) { "String" { "System.String" } "Boolean" { "System.Boolean" } "Number" { "System.Int32" } }
                 # Not a bug, use -eq instead of -is
-                if ($column.DataType -eq [string]) { 
+                if ($column.DataType -eq [string]) {
                    $column.MaxLength = $maxLength
                 }
                 [void] $table.Columns.Add($column)
@@ -419,7 +419,7 @@ function ConvertFrom-DbSmo {
                 [void] $foreignKeyColumns.Add($table.Columns[$keyPropertyName])
             }
 
-            if ($keyPropertyValue -eq $null) {
+            if ($null -eq $keyPropertyValue) {
                 throw "Null value in primary key, this shouldn't happen"
             } else {
                 $row[$keyPropertyName] = $keyPropertyValue
@@ -434,7 +434,7 @@ function ConvertFrom-DbSmo {
     # Get a list of properties to process; but remove the ones that match the wildcards in our exclusion list
     $performanceExclude = Get-Date
     $properties = New-Object System.Collections.ArrayList
-    $InputObject.psobject.Properties | Where-Object { $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" } | ForEach-Object { [void] $properties.Add($_) } 
+    $InputObject.psobject.Properties | Where-Object { $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" } | ForEach-Object { [void] $properties.Add($_) }
 
     # Smo
     # Some of the complexity of the checks here are to make sure we don't do stuff on a "Creating" object, which don't react well to reading and writing properties.
@@ -465,8 +465,8 @@ function ConvertFrom-DbSmo {
     if ((!$InputObject.psobject.Properties["State"] -or $InputObject.State -ne "Creating") -and $InputObject.psobject.Properties["AdvancedProperties"] -and $InputObject.psobject.Properties["AdvancedProperties"].TypeNameOfValue -eq "Microsoft.SqlServer.Management.Smo.PropertyCollection") {
             $newProperties = $InputObject.AdvancedProperties.GetEnumerator() | Where-Object { $_ -and ($properties | Select-Object -ExpandProperty Name) -notcontains $_.Name -and $DbSmoPropertyExclusions -notcontains $_.Name -and $DbSmoPathExclusions -notcontains "$path/$($_.Name)" }
             $newProperties | ForEach-Object { Write-Verbose "Very specially added $($_.Name)"; [void] $properties.Add($_) }
-    }    
-    
+    }
+
     "(Performance Exclude)" | Add-PerformanceRecord $performanceExclude
     # Write-Verbose "$($tab)Properties $($properties | Select-Object -ExpandProperty Name)"
 
@@ -491,7 +491,7 @@ function ConvertFrom-DbSmo {
     #>
 
     foreach ($property in $properties.GetEnumerator()) {
-        try {        
+        try {
             $propertyName = $property.Name
             if ($property.psobject.Properties["TypeNameOfValue"]) {
                 $propertyType = $property.TypeNameOfValue
@@ -509,22 +509,22 @@ function ConvertFrom-DbSmo {
                 $property = $InputObject.Settings.psobject.Properties["OleDbProviderSettings"]
             }
 
-            $propertyValue = $property.Value  
+            $propertyValue = $property.Value
 
             # This addresses specific Server/Configuration entries which have not been filled out, causing an exception
             # when you add them to the table while constraints exist.
             if ($propertyType -eq "Microsoft.SqlServer.Management.Smo.ConfigProperty") { # It's important to use this instead of a check; because UserInstanceTimeout can be a Null value type
-                if ($propertyValue -eq $null -or $propertyValue.Number -eq 0) {
+                if ($null -eq $propertyValue -or $propertyValue.Number -eq 0) {
                     Write-Verbose "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
                     continue
                 } else {
                     Write-Verbose "$($tab)Processing config property $propertyName"
-                
+
                     $OutputObject = ConvertFrom-DbSmo $propertyValue $OutputObject $Depth "$path/$propertyName" $parentPrimaryKeyColumns $ServerName
                     $writeRow = $false
                     continue
                     # We don't return because we want to continue processing all of the other properties in this way.
-                    # However we also don't want to write the row at the end because it's empty, so we set a special flag 
+                    # However we also don't want to write the row at the end because it's empty, so we set a special flag
                     # not to.
                 }
             } elseif ($propertyValue -is [System.Collections.ICollection] -and $propertyValue -isnot [System.Byte[]]) {
@@ -534,7 +534,7 @@ function ConvertFrom-DbSmo {
                 if ($propertyValue.Count -eq 0) {
                     continue
                 }
-          
+
                 $recurseProperties += $property
                 continue
             } else {
@@ -542,7 +542,7 @@ function ConvertFrom-DbSmo {
                 if (!$table.Columns[$propertyName]) {
                     $column = New-Object System.Data.DataColumn
                     $column.ColumnName = $propertyName
-                
+
                     # When adding a column don't jump directly to checking $propertyValue as it may still be null.
 
                     if ($property.psobject.Properties["MemberType"] -and $property.MemberType -eq "ScriptProperty") { # Used on IpAddressToString; MemberType doesn't exist on Properties/AdvancedProperties
@@ -558,7 +558,7 @@ function ConvertFrom-DbSmo {
                         # If we don't haev the right data type, then we can't, by definition, add the column
                         Write-Verbose "$($tab)Skipped writing out the raw column for $propertyName because it doesn't look right; it may be recursed instead"
 
-                        if ($propertyValue -eq $null) {
+                        if ($null -eq $propertyValue) {
                             continue
                         } else {
                             $recurseProperties += $property
@@ -573,9 +573,9 @@ function ConvertFrom-DbSmo {
                 # If it's null we don't need to set it because it defaults to [DBNull]::Value anyway (probably). Also, always
                 # maybe sure to check -(n)e(q) $null because $propertyValue could be a boolean, and false's would then not be
                 # written out.
-                if ($propertyValue -ne $null) {
+                if ($null -ne $propertyValue) {
                     Write-Verbose "$($tab)Processing property $propertyName with value $propertyValue"
-    
+
                     # This is how SMO represents null dates; a 0000 date or a 1900 date. Both are converted to null.
                     if ($propertyValue -isnot [System.DateTime] -or @(599266080000000000, 0) -notcontains $propertyValue.Ticks) {
                         $row[$propertyName] = $propertyValue
@@ -686,7 +686,7 @@ function ConvertFrom-DbSmo {
         if (!$table.PrimaryKey) {
             Write-Verbose "$($tab)Creating primary key"
             [void] $table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true)
-        
+
             # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
             if ($foreignKeyColumns -and !($table.Constraints | Where-Object { $_ -is [System.Data.ForeignKeyConstraint]})) {
                 $foreignKeyName = "FK_$($tableName)_$($ParentPrimaryKeyColumns[0].Table.TableName)"
@@ -703,14 +703,14 @@ function ConvertFrom-DbSmo {
     "(Constraints)" | Add-PerformanceRecord $performanceConstraints
 
     # Part 2 is where we go through and start recursing things
-    try {    
+    try {
         foreach ($property in $recurseProperties) {
             $propertyType = $property.MemberType
             $propertyName = $property.Name
             $propertyValue = $property.Value
-        
+
             if ($propertyType -eq "Method") {
-                <#          
+                <#
                 # For additional safety, make sure it enumerates something
                 if ($propertyName -like "Enum*") {
                     Write-Verbose "$($tab)Processing $propertyName as a method"
@@ -798,12 +798,12 @@ function ConvertFrom-DbSmo {
                     } else {
                         throw
                     }
-                  
+
                 }
 
             } else {
                 Write-Verbose "$($tab)Recursing through $propertyName as a non-collection"
-            
+
                 try {
                     $OutputObject = ConvertFrom-DbSmo $propertyValue $OutputObject $Depth "$path/$propertyName" $primaryKeyColumns $ServerName
                 } catch {
@@ -841,7 +841,7 @@ function ConvertFrom-DbSmo {
                     }
                 }
             }
-        }    
+        }
     } catch {
         throw
     }
@@ -850,7 +850,7 @@ function ConvertFrom-DbSmo {
     # We set an exception not to write the row if it's part of the ServerConfiguration collection (as we write them separately)
     if ($writeRow) {
         Write-Verbose "$($tab)Writing row for $tableName"
-        
+
         try {
             [void] $table.Rows.Add($row)
         } catch {
