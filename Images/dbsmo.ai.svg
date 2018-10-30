@@ -78,9 +78,9 @@
      id="namedview4826"
      showgrid="false"
      inkscape:zoom="2.8284271"
-     inkscape:cx="59.429494"
+     inkscape:cx="1.9770675"
      inkscape:cy="-4.458063"
-     inkscape:window-x="1912"
+     inkscape:window-x="-8"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
      inkscape:current-layer="layer2"
@@ -112,6 +112,7 @@
      style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Copperplate Gothic Bold';-inkscape-font-specification:'Copperplate Gothic Bold, ';fill:#083b66;fill-opacity:1;stroke:#083b66;stroke-width:0.74183452;stroke-opacity:1">DbSmo</tspan></text>
 
 
+
 <text
    xml:space="preserve"
    style="font-style:normal;font-weight:normal;font-size:30px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.75"
@@ -124,6 +125,7 @@
      x="90.810387"
      y="17.836012"
      style="stroke-width:0.75" /></text>
+
 
 
 </g><g
@@ -167,7 +169,7 @@
      inkscape:groupmode="layer"
      id="layer1"
      inkscape:label="powershell"
-     style="display:none"><g
+     style="display:inline"><g
        style="display:inline"
        id="g148"
        transform="matrix(1.797363,0,0,-1.797363,-84.533697,106.46854)"><g
