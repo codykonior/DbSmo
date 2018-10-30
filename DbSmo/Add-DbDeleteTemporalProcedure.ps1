@@ -111,7 +111,7 @@ Begin
             Set     @SqlLine = 'Delete From ' + @SchemaName + '.' + @TableName + ' Where ' + @ColumnName + ' = @Value;
 '
             Print   @SqlLine;
-            Set         @Sql += @SqlLine;
+            Set     @Sql += @SqlLine;
             Fetch   Next From CTE_Delete_Temporal Into @SchemaName, @TableName, @ColumnName;
     End;
 
