@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - None.
 
+## [1.5.2] - 2019-08-30
+
+### Fixed
+
+- Syntax changes for DbData.
+- Exclusions added for the current version of SMO.
+- ForeignKeys are now checked on creation (should fix untrusted bug).
+
+### Added
+
+- Support for SQL 2017 temporal tables and on delete cascade.
+
 ## [1.5.1] - 2019-06-18
 
 ### Fixed

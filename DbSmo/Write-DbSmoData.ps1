@@ -55,16 +55,23 @@ function Write-DbSmoData {
     }
 
     Use-DbRetry {
-        Add-DbDeleteTemporalProcedure $ServerInstance $DatabaseName $SchemaName
-        $dbData = New-DbConnection $ServerInstance $DatabaseName | New-DbCommand "Exec dbo.DeleteTemporal @SchemaName = @SchemaName, @TableName = @TableName, @ColumnName = 'Name', @Value = @Value" -Parameters @{ SchemaName = $SchemaName; TableName = $baseTableName; Value = $dataSet.Tables[0].Rows[0].Name; } | Enter-DbTransaction -PassThru
-
-        # Delete
         try {
-            $dbData | Get-DbData -NoCommandBuilder
+            $smo = Get-DbSmo $ServerInstance
+            # Delete
+            if ($smo.Version.Major -lt 14) {
+                Add-DbDeleteTemporalProcedure $ServerInstance $DatabaseName $SchemaName
+                $dbData = New-DbConnection $ServerInstance $DatabaseName | New-DbCommand "EXEC [dbo].[DeleteTemporal] @SchemaName = @SchemaName, @TableName = @TableName, @ColumnName = 'Name', @Value = @Value;" -Parameters @{ SchemaName = $SchemaName; TableName = $baseTableName; Value = $dataSet.Tables[0].Rows[0].Name; } | Enter-DbTransaction -PassThru
+            } else {
+                $dbData = New-DbConnection -ServerInstance $ServerInstance -DatabaseName $DatabaseName | New-DbCommand "DELETE FROM [$SchemaName].[$baseTableName] WHERE [Name] = '$($dataSet.Tables[0].Rows[0].Name)';" | Enter-DbTransaction -PassThru
+            }
+            $dbData | Get-DbData
+            # Add
             $dbData | New-DbBulkCopy -DataSet $DataSet -Timeout 600
             $dbData | Exit-DbTransaction -Commit
         } catch {
-            $dbData | Exit-DbTransaction -Rollback
+            if ($dbData) {
+                $dbData | Exit-DbTransaction -Rollback
+            }
             throw
         }
     }

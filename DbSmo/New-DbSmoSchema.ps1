@@ -33,21 +33,12 @@ function New-DbSmoSchema {
 
     $scriptText = New-Object System.Collections.ArrayList
 
-    if ($PSCmdlet.ParameterSetName -eq "Connection") {
-        $sqlConnection = $Connection
-        $DatabaseName = $sqlConnection.Database
-
-        $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
-    } else {
-        $sqlConnection = New-Object Microsoft.SqlServer.Management.Common.ServerConnection
-        $sqlConnection.ConnectTimeout = 60
-        $sqlConnection.ServerInstance = $ServerInstance
-        $sqlConnection.DatabaseName = $DatabaseName
-        $sqlConnection.Connect()
-        $sqlServer = New-Object Microsoft.SqlServer.Management.Smo.Server($sqlConnection)
+    if ($PSCmdlet.ParameterSetName -ne "Connection") {
+        $Connection = New-DbConnection -ServerInstance $ServerInstance -DatabaseName $DatabaseName
     }
+    $smo = $Connection | Get-DbSmo
 
-    $sqlDatabase = $sqlServer.Databases[$DatabaseName]
+    $sqlDatabase = $smo.Databases[$DatabaseName]
     $newSchema = New-Object Microsoft.SqlServer.Management.Smo.Schema($sqlDatabase, $schemaName)
     $newSchema.Refresh()
     if ($Script) {
@@ -72,7 +63,7 @@ function New-DbSmoSchema {
             $newTable.Refresh() # This will fill the schema from the database if it already exists
 
             # Add temporal table columns if this is SQL 2016 onwards
-            if ($newTable.Columns.Count -eq 0 -and ([version] $sqlConnection.ServerVersion).Major -ge 13) {
+            if ($newTable.Columns.Count -eq 0 -and $smo.Version.Major -ge 13) {
                 Write-Verbose "Adding temporal fields"
                 $dataType = New-Object Microsoft.SqlServer.Management.Smo.DataType("DateTime2", 2)
                 $fromColumn = New-Object Microsoft.SqlServer.Management.Smo.Column($newTable, "_ValidFrom", $dataType)
@@ -104,10 +95,10 @@ function New-DbSmoSchema {
                     "Byte[]" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::VarBinary
                     }
-                    "Byte"  {
+                    "Byte" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::TinyInt
                     }
-                    "DateTime"  {
+                    "DateTime" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::DateTime2
                     }
                     "Decimal" {
@@ -119,19 +110,19 @@ function New-DbSmoSchema {
                     "Guid" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::UniqueIdentifier
                     }
-                    "Int16"  {
+                    "Int16" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
                     }
-                    "Int32"  {
+                    "Int32" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::Int
                     }
                     "Int64" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt
                     }
-                    "UInt16"  {
+                    "UInt16" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::SmallInt
                     }
-                    "UInt32"  {
+                    "UInt32" {
                         [Microsoft.SqlServer.Management.Smo.SqlDataType]::BigInt # Cluster.RootMemoryReserved; ClusterNode.DrainTarget; ClusterGroup.FailoverThreshold
                     }
                     "UInt64" {
@@ -237,9 +228,15 @@ function New-DbSmoSchema {
                 $foreignKey = New-Object Microsoft.SqlServer.Management.Smo.ForeignKey($tables[$tableName], $constraintName)
                 $foreignKey.ReferencedTable = $constraint.RelatedTable.TableName
                 $foreignKey.ReferencedTableSchema = $SchemaName
+                $foreignKey.IsChecked = $true
                 for ($i = 0; $i -lt $constraint.Columns.Count; $i++) {
                     $foreignKeyColumn = New-Object Microsoft.SqlServer.Management.Smo.ForeignKeyColumn($foreignKey, $constraint.Columns[$i], $constraint.RelatedColumns[$i])
                     $foreignKey.Columns.Add($foreignKeyColumn)
+                }
+
+                # SQL 2017 supports on Delete Cascade with Temporal Tables
+                if ($smo.Version.Major -ge 14) {
+                    $foreignKey.DeleteAction = "Cascade"
                 }
 
                 if ($Script) {
