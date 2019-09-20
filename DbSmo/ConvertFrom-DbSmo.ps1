@@ -113,7 +113,7 @@ function ConvertFrom-DbSmo {
             break
         }
 
-
+        # These are excluded so shouldn't ever occur anyway
         # Don't use DefaultLanguage
         "Server/Database/DefaultLanguage" {
             $tableName = "DatabaseDefaultLanguage"
@@ -162,7 +162,8 @@ function ConvertFrom-DbSmo {
             break
         }
         # 2016 Additions
-        "Server/ResourceGovernor/ExternalResourcePool/ExternalResourcePoolAffinityInfo/Cpus" { # Not a typo, they standardised it
+        "Server/ResourceGovernor/ExternalResourcePool/ExternalResourcePoolAffinityInfo/Cpus" {
+            # Not a typo, they standardised it
             $tableName = "ExternalResourcePoolCpus"
             break
         }
@@ -295,11 +296,13 @@ function ConvertFrom-DbSmo {
             $tableName = "UserPermission"
             break
         }
-        "Server/Database/User/EnumObjectPermissions/PermissionType" { # Child of above
+        "Server/Database/User/EnumObjectPermissions/PermissionType" {
+            # Child of above
             $tableName = "UserPermissionType"
             break
         }
-        "Server/Role/EnumMemberNames" { # EnumServerRoleMembers is deprecated
+        "Server/Role/EnumMemberNames" {
+            # EnumServerRoleMembers is deprecated
             $tableName = "ServerRoleMember"
             break
         }
@@ -513,7 +516,8 @@ function ConvertFrom-DbSmo {
 
             # This addresses specific Server/Configuration entries which have not been filled out, causing an exception
             # when you add them to the table while constraints exist.
-            if ($propertyType -eq "Microsoft.SqlServer.Management.Smo.ConfigProperty") { # It's important to use this instead of a check; because UserInstanceTimeout can be a Null value type
+            if ($propertyType -eq "Microsoft.SqlServer.Management.Smo.ConfigProperty") {
+                # It's important to use this instead of a check; because UserInstanceTimeout can be a Null value type
                 if ($null -eq $propertyValue -or $propertyValue.Number -eq 0) {
                     Write-Verbose "$($tab)Skipping config property $propertyName with value $propertyValue because it's invalid"
                     continue
@@ -545,7 +549,8 @@ function ConvertFrom-DbSmo {
 
                     # When adding a column don't jump directly to checking $propertyValue as it may still be null.
 
-                    if ($property.psobject.Properties["MemberType"] -and $property.MemberType -eq "ScriptProperty") { # Used on IpAddressToString; MemberType doesn't exist on Properties/AdvancedProperties
+                    if ($property.psobject.Properties["MemberType"] -and $property.MemberType -eq "ScriptProperty") {
+                        # Used on IpAddressToString; MemberType doesn't exist on Properties/AdvancedProperties
                         $columnDataType = "System.String"
                     } else {
                         $columnDataType = if ($DataTypeSimple -contains $propertyType) {
@@ -688,7 +693,7 @@ function ConvertFrom-DbSmo {
             [void] $table.Constraints.Add("PK_$tableName", $primaryKeyColumns, $true)
 
             # Check we have foreign keys to create (we wouldn't, for example, on Server) and that no foreign key exists yet.
-            if ($foreignKeyColumns -and !($table.Constraints | Where-Object { $_ -is [System.Data.ForeignKeyConstraint]})) {
+            if ($foreignKeyColumns -and !($table.Constraints | Where-Object { $_ -is [System.Data.ForeignKeyConstraint] })) {
                 $foreignKeyName = "FK_$($tableName)_$($ParentPrimaryKeyColumns[0].Table.TableName)"
                 Write-Verbose "$($tab)Creating foreign key $foreignKeyName"
 

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - None.
 
+## [1.5.3] - 2019-09-20
+
+### Changed
+
+- Exclude two tables which already exist in a simpler form as properties, and
+  other properties which exist on every table unnecessarily.
+
 ## [1.5.2] - 2019-08-30
 
 ### Fixed

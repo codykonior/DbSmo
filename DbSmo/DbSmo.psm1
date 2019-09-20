@@ -97,6 +97,11 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
     # There is one caveat; while we exclude Server/Settings, in the code we redirect Server/OleDbProviderSettings
     # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't.
 
+    # These already exist in Database and User as properties
+    "Server/Database/DefaultLanguage",
+    "Server/Database/DatabaseDefaultFullTextLanguage",
+    "Server/Database/User/DefaultLanguage",
+
     # Read the strings only instead
     "Server/AvailabilityGroup/AvailabilityReplica/ReadOnlyRoutingList",
     "Server/AvailabilityGroup/AvailabilityReplica/LoadBalancedReadOnlyRoutingList",
@@ -105,8 +110,16 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
     "Server/ResourceGovernor/ResourcePool/ResourcePoolAffinityInfo/Schedulers/Cpu"
 )
 
-Set-Variable -Scope Script -Option Constant -Name DbSmoPropertyExclusions -Value @("ConnectionContext", "ExecutionManager", "Events", "IsDesignMode", "Parent", "State", "Urn", "UserData" <#  ProcessorUsage often throws exceptions #>, "ParentCollection")
-# ConnectionContext was in SMO 2014; ExecutionManager is another wrapper in SMO 2016
+Set-Variable -Scope Script -Option Constant -Name DbSmoPropertyExclusions -Value @(
+    # ConnectionContext was in SMO 2014; ExecutionManager is another wrapper in SMO 2016
+    "ConnectionContext", "ExecutionManager",
+    "Events", "IsDesignMode", "Parent", "State", "Urn",
+    "UserData", "ParentCollection",
+    # These are added to every table but already exist under other names on the Server object
+    "ServerVersion", "DatabaseEngineType", "DatabaseEngineEdition",
+    # This is added to every table but is usually "Unknown" so seems pointless
+    "PolicyHealthState"
+)
 
 Set-Variable -Scope Script -Option Constant -Name DataTypeSimple -Value @(
     "System.Boolean",
