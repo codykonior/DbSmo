@@ -93,7 +93,7 @@ Set-Variable -Scope Script -Option Constant -Name DbSmoPathExclusions -Value @(
     # Deprecated and already in Server and Database respectively
     "Server/Information",
     "Server/Settings",
-    "Server/Database/DatabaseOptions"
+    "Server/Database/DatabaseOptions",
     # There is one caveat; while we exclude Server/Settings, in the code we redirect Server/OleDbProviderSettings
     # to the variable in Server/Settings/OleDbProviderSettings; because one works and the other doesn't.
 

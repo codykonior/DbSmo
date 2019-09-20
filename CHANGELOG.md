@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- None.
+### Fixed
+
+- Add missing comma, no effect.
 
 ## [1.5.3] - 2019-09-20
 
