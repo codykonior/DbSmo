@@ -297,7 +297,7 @@ Go
 Create Schema smo
 Go
 
-Create Procedure dbo.ClearSchema
+Create Or Alter Procedure dbo.ClearSchema
     @SchemaName Sysname
 As
 Begin
@@ -315,17 +315,15 @@ Begin
     Where   o.schema_id = Schema_Id(@SchemaName)
 
     Insert  @Commands
-    Select  'Alter Table ' + Quotename(@SchemaName) + '.' + Quotename(o.name) + ' Drop Constraint ' + Quotename(i.name)
-    From    sys.objects o
-    Join    sys.indexes i
-    On      o.object_id = i.object_id
-    Where   o.schema_id = Schema_Id(@SchemaName)
-    And     i.is_primary_key = 1
+    SELECT  'Alter Table ' + Quotename(@SchemaName) + '.' + Quotename(t.name) + ' SET (SYSTEM_VERSIONING = OFF)'
+    FROM    sys.tables t
+    Where   t.schema_id = Schema_Id(@SchemaName)
+    AND     t.history_table_id IS NOT NULL
 
     Insert  @Commands
-    Select  'Drop Table ' + Quotename(@SchemaName) + '.' + Quotename(o.name)
-    From    sys.objects o
-    Where   o.schema_id = Schema_Id(@SchemaName)
+    Select  'Drop Table ' + Quotename(@SchemaName) + '.' + Quotename(t.name)
+    From    sys.tables t
+    Where   t.schema_id = Schema_Id(@SchemaName)
 
     Declare @Command Nvarchar(Max)
 
@@ -337,10 +335,17 @@ Begin
     While   @@Fetch_Status = 0
     Begin
             Print @Command
-            Exec sp_executesql @Command
+            -- EXEC sp_executesql @Command
             Fetch Next From ClearSchema Into @Command
     End
     Close   ClearSchema
     Deallocate ClearSchema
+
+    SELECT  'Leftover',
+            *
+    FROM    sys.objects o
+    WHERE   o.schema_id = Schema_Id(@SchemaName)
 End
 Go
+
+EXEC dbo.ClearSchema 'Smo'
